@@ -95,12 +95,22 @@ CREATE TABLE sys_transaction_category_map (
         CHECK (confidence >= 0.0 AND confidence <= 1.0),
     sys_rule_id INTEGER,
     created_date DATE DEFAULT CURRENT_TIMESTAMP,
+
     FOREIGN KEY(sys_transaction_id) 
         REFERENCES sys_transaction(sys_transaction_id),
+
     FOREIGN KEY(sys_transaction_category_id) 
         REFERENCES sys_transaction_category(sys_transaction_category_id),
+
     FOREIGN KEY(sys_rule_id) 
-        REFERENCES sys_rules(sys_rules_id)
+        REFERENCES sys_rules(sys_rules_id),
+
+    CHECK (
+        (is_auto = 0 AND sys_rule_id IS NULL) OR
+        (is_auto = 1)
+    ),
+    
+    CHECK (is_auto IN (0,1))
 );
 
 CREATE INDEX idx_category_map_txn 
