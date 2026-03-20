@@ -68,6 +68,7 @@ CREATE TABLE sys_account_mapping (
     sourcefile_fieldname VARCHAR(250) NOT NULL,
     staging_table_fieldname VARCHAR(250) NOT NULL,
     datatype VARCHAR(250) NOT NULL,
+    transaction_table_fieldname VARCHAR(250) NOT NULL,
     default_value VARCHAR(250),
     derived_field INT NOT NULL,
     unique_records INT,
