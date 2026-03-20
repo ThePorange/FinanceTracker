@@ -119,7 +119,6 @@ CREATE TABLE sys_rules (
     sys_rules_id INTEGER PRIMARY KEY,
     rule_name VARCHAR(250) NOT NULL,
     rule_json TEXT NOT NULL,
-    category VARCHAR(250) NOT NULL,
     created_date DATE DEFAULT CURRENT_TIMESTAMP,
     sys_transaction_category_id INTEGER,
     sys_account_source_id INTEGER,
