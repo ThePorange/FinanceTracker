@@ -3,8 +3,31 @@ PRAGMA foreign_keys = ON;
 CREATE TABLE sys_account_source (
     sys_account_source_id INTEGER PRIMARY KEY,
     account_source_name VARCHAR(250) NOT NULL,
+    base_currency_id INTEGER,
+    debit_negative INTEGER DEFAULT 0,
+    created_date DATE DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(base_currency_id) REFERENCES sys_currency(sys_currency_id)
+);
+
+CREATE TABLE sys_account_group_map (
+    sys_account_group_id INTEGER NOT NULL,
+    sys_account_source_id INTEGER NOT NULL,
+    created_date DATE DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (sys_account_group_id, sys_account_source_id),
+    FOREIGN KEY(sys_account_source_id) 
+    REFERENCES sys_account_source(sys_account_source_id),
+    FOREIGN KEY(sys_account_group_id) 
+    REFERENCES sys_account_group(sys_account_group_id)
+);
+
+CREATE TABLE sys_account_group (
+    sys_account_group_id INTEGER PRIMARY KEY,
+    account_group_name VARCHAR(250) NOT NULL,
     created_date DATE DEFAULT CURRENT_TIMESTAMP
 );
+
+
+
 
 CREATE TABLE sys_import_log (
     sys_import_log_id INTEGER PRIMARY KEY,
@@ -49,6 +72,8 @@ CREATE TABLE sys_transaction (
     account_source_row INTEGER NOT NULL,
     created_date DATE DEFAULT CURRENT_TIMESTAMP,
     sys_transaction_type_id INTEGER,
+    record INTEGER,
+    records INTEGER,
     FOREIGN KEY(sys_import_log_id) REFERENCES sys_import_log(sys_import_log_id),
     FOREIGN KEY(sys_transaction_type_id) REFERENCES sys_transaction_type(sys_transaction_type_id),
     FOREIGN KEY(base_curr_id) REFERENCES sys_currency(sys_currency_id),   
@@ -154,6 +179,13 @@ CREATE TABLE sys_currency_pair (
     UNIQUE(from_ccy_id, to_ccy_id)
 );
 
+CREATE TRIGGER trg_sys_currency_after_insert
+AFTER INSERT ON sys_currency
+BEGIN
+    INSERT INTO sys_currency_pair (from_ccy_id, to_ccy_id)
+    VALUES (NEW.sys_currency_id, NEW.sys_currency_id);
+END;
+
 CREATE TABLE sys_fx_rate (
     sys_fx_rate_id INTEGER PRIMARY KEY,
     sys_currency_pair_id INTEGER,
@@ -222,18 +254,13 @@ INSERT INTO sys_currency (currency_code) VALUES ('USD');
 INSERT INTO sys_currency (currency_code) VALUES ('GBP');
 INSERT INTO sys_currency (currency_code) VALUES ('EUR');
 
-INSERT INTO sys_currency_pair (from_ccy_id, to_ccy_id) VALUES ((SELECT sys_currency_id FROM sys_currency WHERE currency_code = 'USD'),(SELECT sys_currency_id FROM sys_currency WHERE currency_code = 'USD'));
-INSERT INTO sys_currency_pair (from_ccy_id, to_ccy_id) VALUES ((SELECT sys_currency_id FROM sys_currency WHERE currency_code = 'GBP'),(SELECT sys_currency_id FROM sys_currency WHERE currency_code = 'GBP'));
-INSERT INTO sys_currency_pair (from_ccy_id, to_ccy_id) VALUES ((SELECT sys_currency_id FROM sys_currency WHERE currency_code = 'EUR'),(SELECT sys_currency_id FROM sys_currency WHERE currency_code = 'EUR'));
-
-
-INSERT INTO sys_staging_fields (staging_table_fieldname, datatype , default_value, derived_field, unique_records ) VALUES ('sys_account_source_id', 'INT', '', 1, 1);
-INSERT INTO sys_staging_fields (staging_table_fieldname, datatype , default_value, derived_field, unique_records ) VALUES ('account_base_curr', 'VARCHAR(10)', (SELECT sys_currency_id FROM sys_currency WHERE currency_code = 'USD'), 1, 1);
-INSERT INTO sys_staging_fields (staging_table_fieldname, datatype , default_value, derived_field, unique_records ) VALUES ('account_source_filename', 'VARCHAR(250)', '', 1, 1);
-INSERT INTO sys_staging_fields (staging_table_fieldname, datatype , default_value, derived_field, unique_records ) VALUES ('account_source_row', 'INT', '', 1, 1);
-INSERT INTO sys_staging_fields (staging_table_fieldname, datatype , default_value, derived_field, unique_records ) VALUES ('debit_negative', 'INT', -1, 1, 1);
-INSERT INTO sys_staging_fields (staging_table_fieldname, datatype , default_value, derived_field, unique_records ) VALUES ('abs_debit_credit', 'INT', 0, 1, 1);
-INSERT INTO sys_staging_fields (staging_table_fieldname, datatype , default_value, derived_field, unique_records ) VALUES ('created_date', 'INT', 'CURRENT_TIMESTAMP', 1, 1);
+INSERT INTO sys_staging_fields (staging_table_fieldname, datatype , default_value, derived_field, unique_records ) VALUES ('sys_account_source_id', 'INT', '', 1, 0);
+INSERT INTO sys_staging_fields (staging_table_fieldname, datatype , default_value, derived_field, unique_records ) VALUES ('account_source_filename', 'VARCHAR(250)', '', 1, 0);
+INSERT INTO sys_staging_fields (staging_table_fieldname, datatype , default_value, derived_field, unique_records ) VALUES ('account_source_row', 'INT', '', 1, 0);
+INSERT INTO sys_staging_fields (staging_table_fieldname, datatype , default_value, derived_field, unique_records ) VALUES ('abs_debit_credit', 'INT', 0, 1, 0);
+INSERT INTO sys_staging_fields (staging_table_fieldname, datatype , default_value, derived_field, unique_records ) VALUES ('record', 'INT', 1, 1, 0);
+INSERT INTO sys_staging_fields (staging_table_fieldname, datatype , default_value, derived_field, unique_records ) VALUES ('records', 'INT', '', 1, 0);
+INSERT INTO sys_staging_fields (staging_table_fieldname, datatype , default_value, derived_field, unique_records ) VALUES ('created_date', 'INT', 'CURRENT_TIMESTAMP', 1, 0);
 
 INSERT INTO sys_account_source (sys_account_source_id, account_source_name) VALUES (1, 'System rule');
 
