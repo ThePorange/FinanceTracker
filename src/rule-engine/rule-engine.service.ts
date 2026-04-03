@@ -67,4 +67,46 @@ export class RuleEngineService {
     runRules();
     return { message: 'Rules applied successfully', appliedCount };
   }
+
+  testRuleEvaluation(description: string, amount: number = 0) {
+    const db = this.dbService.getDb();
+    const rules = db.prepare('SELECT * FROM sys_rules').all() as any[];
+
+    for (const rule of rules) {
+      let conditionObj: any;
+      try {
+        conditionObj = JSON.parse(rule.rule_json);
+      } catch (e) {
+        continue;
+      }
+
+      const evaluateCondition = (cond: any): boolean => {
+        if (!cond) return false;
+        if (cond.type === 'contains') return description.toLowerCase().includes(String(cond.value).toLowerCase());
+        if (cond.type === 'equals') return description.toLowerCase() === String(cond.value).toLowerCase();
+        if (cond.type === 'amount_range') return amount >= Number(cond.min) && amount <= Number(cond.max);
+        if (cond.type === 'AND' && Array.isArray(cond.conditions)) {
+          return cond.conditions.every((c: any) => evaluateCondition(c));
+        }
+        return false;
+      };
+
+      if (evaluateCondition(conditionObj)) {
+        const cat = db.prepare('SELECT category_name FROM sys_transaction_category WHERE sys_transaction_category_id = ?').get(rule.sys_transaction_category_id) as any;
+        return {
+          matchedRuleId: rule.sys_rules_id,
+          matchedPattern: conditionObj.value || 'Complex Rule',
+          assignedCategory: cat ? cat.category_name : 'Unknown',
+          confidence: 0.95
+        };
+      }
+    }
+
+    return {
+      matchedRuleId: null,
+      matchedPattern: null,
+      assignedCategory: null,
+      confidence: 0
+    };
+  }
 }

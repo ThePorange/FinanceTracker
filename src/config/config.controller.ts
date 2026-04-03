@@ -19,17 +19,29 @@ export class ConfigController {
       sys_fx_rate: dtos.CreateSysFxRateDto,
       sys_config: dtos.CreateSysConfigDto,
       sys_staging_fields: dtos.CreateSysStagingFieldsDto,
+      sys_account_group: dtos.CreateSysAccountGroupDto,
+      sys_account_group_map: dtos.CreateSysAccountGroupMapDto,
     };
     const DtoClass = dtoMap[table];
     if (!DtoClass) throw new BadRequestException(`No DTO schema for table ${table}`);
     
-    // class-transformer conversion based on DTO classes
-    const instance = plainToInstance(DtoClass, data) as object;
+    // class-transformer conversion based on DTO classes with implicit casts
+    const instance = plainToInstance(DtoClass, data, { enableImplicitConversion: true }) as object;
     const errors = await validate(instance);
     if (errors.length > 0) {
-      throw new BadRequestException(errors.map(e => Object.values(e.constraints || {})).flat());
+      throw new BadRequestException(errors.map(e => Object.values(e.constraints || {})).flat().join(', '));
     }
     return instance as Record<string, any>;
+  }
+
+  @Get('meta/staging-tables')
+  getStagingTables() {
+    return this.configService.getStagingTables();
+  }
+
+  @Get('meta/schema/:table')
+  getTableSchema(@Param('table') table: string) {
+    return this.configService.getTableSchema(table);
   }
 
   @Get(':table')
@@ -43,8 +55,13 @@ export class ConfigController {
 
   @Post(':table')
   async create(@Param('table') table: string, @Body() data: any) {
-    const validated = await this.validateDto(table, data);
-    return this.configService.create(table, validated);
+    try {
+      const validated = await this.validateDto(table, data);
+      return this.configService.create(table, validated);
+    } catch (e: any) {
+      require('fs').writeFileSync('last_error.log', e.stack || e.message);
+      throw e;
+    }
   }
 
   @Put(':table/:idField/:idId')

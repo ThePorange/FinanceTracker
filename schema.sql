@@ -34,6 +34,7 @@ CREATE TABLE sys_import_log (
     sys_account_source_id INTEGER,
     account_source_filename VARCHAR(250) NOT NULL,
     account_source_filename_checksum VARCHAR(250) NOT NULL,
+    account_source_unique_checksum VARCHAR(250) NOT NULL,
     account_source_row_count INTEGER NOT NULL,
     import_log_json TEXT NOT NULL,
     created_date DATE DEFAULT CURRENT_TIMESTAMP,
@@ -222,7 +223,8 @@ SELECT t.sys_transaction_id,
        t.description,
        c.category_name,
        m.is_auto,
-       m.confidence
+       m.confidence,
+       m.sys_rule_id
 FROM sys_transaction t
 JOIN sys_transaction_category_map m 
     ON t.sys_transaction_id = m.sys_transaction_id
@@ -236,10 +238,15 @@ SELECT t.sys_transaction_id,
        t.description,
        c.category_name,
        m.is_auto,
-       m.confidence
+       m.confidence,
+       m.sys_rule_id
 FROM sys_transaction t
-JOIN sys_transaction_category_map m 
-    ON t.sys_transaction_id = m.sys_transaction_id
+JOIN (
+    SELECT sys_transaction_id, sys_transaction_category_id, is_auto, confidence, sys_rule_id, 
+           ROW_NUMBER() OVER(PARTITION BY sys_transaction_id ORDER BY confidence DESC, sys_rule_id DESC) as rn 
+    FROM sys_transaction_category_map 
+    WHERE is_auto = 1
+) m ON t.sys_transaction_id = m.sys_transaction_id AND m.rn = 1
 JOIN sys_transaction_category c 
     ON m.sys_transaction_category_id = c.sys_transaction_category_id
 WHERE m.is_auto = 1
@@ -266,3 +273,7 @@ INSERT INTO sys_account_source (sys_account_source_id, account_source_name) VALU
 
 INSERT INTO sys_config (config_key, config_value) VALUES ('reporting_currency', (SELECT sys_currency_id FROM sys_currency WHERE currency_code = 'USD'));
 INSERT INTO sys_config (config_key, config_value) VALUES ('dark_mode', 0);
+INSERT INTO sys_config (config_key, config_value) VALUES ('uk_tax_year_start', '6-apr');
+INSERT INTO sys_config (config_key, config_value) VALUES ('uk_tax_year_end', '5-apr');
+INSERT INTO sys_config (config_key, config_value) VALUES ('us_tax_year_start', '1-jan');
+INSERT INTO sys_config (config_key, config_value) VALUES ('us_tax_year_end', '31-dec');

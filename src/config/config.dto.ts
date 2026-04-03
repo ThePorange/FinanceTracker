@@ -55,3 +55,12 @@ export class CreateSysStagingFieldsDto {
   @IsInt() derived_field!: number;
   @IsInt() unique_records!: number;
 }
+
+export class CreateSysAccountGroupDto {
+  @IsString() account_group_name!: string;
+}
+
+export class CreateSysAccountGroupMapDto {
+  @IsInt() sys_account_group_id!: number;
+  @IsInt() sys_account_source_id!: number;
+}

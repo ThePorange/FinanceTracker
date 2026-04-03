@@ -13,14 +13,27 @@ export class ConfigService {
     'sys_fx_rate',
     'sys_config',
     'sys_staging_fields',
+    'sys_transaction',
+    'sys_import_log',
+    'sys_account_group',
+    'sys_account_group_map'
   ];
 
   constructor(private readonly dbService: DatabaseService) {}
 
   private validateTable(table: string) {
-    if (!this.allowedTables.includes(table)) {
-      throw new BadRequestException(`Invalid table name: ${table}`);
+    if (!this.allowedTables.includes(table) && !table.startsWith('staging_')) {
+      throw new BadRequestException(`Invalid table namespace interpolation: ${table}`);
     }
+  }
+
+  getStagingTables() {
+    return this.dbService.getDb().prepare("SELECT name, sql FROM sqlite_master WHERE type='table' AND name LIKE 'staging_%'").all();
+  }
+
+  getTableSchema(table: string) {
+    this.validateTable(table);
+    return this.dbService.getDb().prepare(`PRAGMA table_info(${table})`).all();
   }
 
   findAll(table: string, page = 1, limit = 50, filters: Record<string, any> = {}) {
@@ -28,6 +41,9 @@ export class ConfigService {
     const db = this.dbService.getDb();
     
     let query = `SELECT * FROM ${table}`;
+    if (table === 'sys_import_log') {
+      query = `SELECT t.*, s.account_source_name FROM sys_import_log t LEFT JOIN sys_account_source s ON t.sys_account_source_id = s.sys_account_source_id`;
+    }
     let countQuery = `SELECT COUNT(*) as total FROM ${table}`;
     const params: any[] = [];
     const filterKeys = Object.keys(filters);

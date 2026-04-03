@@ -1,0 +1,7 @@
+@import "tailwindcss";
+
+@theme {
+  --color-finance-primary: #2563eb;
+  --color-finance-secondary: #0f172a;
+  --color-finance-muted: #f1f5f9;
+}

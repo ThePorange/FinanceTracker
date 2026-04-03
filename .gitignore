@@ -75,6 +75,10 @@ out/
 *.db
 *.db3
 *.db-journal
+*.dbold
+*.db-wal
+*.db-shm
+*.old
 
 # Output of 'npm pack'
 *.tgz
