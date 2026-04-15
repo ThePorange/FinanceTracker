@@ -1,52 +1,102 @@
-import { useState, useMemo } from 'react';
+import { useMemo } from 'react';
 import { useTransactions } from '../transactions/useTransactions';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line, CartesianGrid } from 'recharts';
+import { useTransactionFilters } from '../transactions/TransactionFilterContext';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line, CartesianGrid, Legend } from 'recharts';
 import { TransactionFilterPanel } from '../transactions/TransactionFilterPanel';
+import { Input } from '../../components/shared/Input';
 
 export function DashboardScreen() {
-  const [filters, setFilters] = useState<Record<string, any>>({ limit: -1 });
-  const { data: transactions, isLoading } = useTransactions(filters);
+  const { filters, setFilters, search, setSearch } = useTransactionFilters();
 
-  const { categorySpend, monthlyTrend } = useMemo(() => {
-    if (!transactions) return { categorySpend: [], monthlyTrend: [] };
+  // Since Dashboard needs limit: -1, we can merge the context filters with the limit override
+  const dashboardFilters = { ...filters, limit: -1 };
+  const { data: transactions, isLoading } = useTransactions(dashboardFilters);
 
-    const catMap: Record<string, number> = {};
-    const monthMap: Record<string, number> = {};
+  const filteredTransactions = useMemo(() => {
+    if (!transactions) return [];
+    if (!search) return transactions;
+    const lower = search.toLowerCase();
+    return transactions.filter(t => t.description?.toLowerCase().includes(lower));
+  }, [transactions, search]);
 
-    transactions.forEach(t => {
+  const { categorySpend, monthlyTrend, totalCR, totalDR } = useMemo(() => {
+    if (!filteredTransactions) return { categorySpend: [], monthlyTrend: [], totalCR: 0, totalDR: 0 };
+
+    const catMap: Record<string, { dr: number, cr: number }> = {};
+    const monthMap: Record<string, { dr: number, cr: number }> = {};
+
+    let totalCR = 0;
+    let totalDR = 0;
+
+    filteredTransactions.forEach(t => {
       const cat = t.userCategory || t.autoCategory || 'Uncategorized';
-      catMap[cat] = (catMap[cat] || 0) + Math.abs(t.amount);
+      const amt = Math.abs(t.amount || 0);
 
-      const date = new Date(t.date);
+      const date = new Date(t.date || t.transaction_date || t.posting_date || new Date());
       const monthStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-      monthMap[monthStr] = (monthMap[monthStr] || 0) + Math.abs(t.amount);
+      
+      if (!catMap[cat]) catMap[cat] = { dr: 0, cr: 0 };
+      if (!monthMap[monthStr]) monthMap[monthStr] = { dr: 0, cr: 0 };
+
+      if (t.drcr === 'CR') {
+        totalCR += amt;
+        catMap[cat].cr += amt;
+        monthMap[monthStr].cr += amt;
+      } else if (t.drcr === 'DR') {
+        totalDR += amt;
+        catMap[cat].dr += amt;
+        monthMap[monthStr].dr += amt;
+      }
     });
 
     const categorySpend = Object.entries(catMap)
-      .map(([name, amount]) => ({ name, amount }))
-      .sort((a, b) => b.amount - a.amount)
+      .map(([name, vals]) => ({ name, dr: vals.dr, cr: vals.cr, total: vals.dr + vals.cr }))
+      .sort((a, b) => b.total - a.total)
       .slice(0, 7);
 
     const monthlyTrend = Object.entries(monthMap)
-      .map(([month, amount]) => ({ month, amount }))
+      .map(([month, vals]) => ({ month, dr: vals.dr, cr: vals.cr }))
       .sort((a, b) => a.month.localeCompare(b.month));
 
-    return { categorySpend, monthlyTrend };
-  }, [transactions]);
+    return { categorySpend, monthlyTrend, totalCR, totalDR };
+  }, [filteredTransactions]);
 
   if (isLoading) return <div className="p-8 text-gray-500 animate-pulse">Computing analytics...</div>;
 
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-8 animate-in fade-in duration-500">
-      <div>
-        <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Dashboard Overview</h1>
-        <p className="text-gray-500 mt-1">High-level financial analytics and spending trends</p>
+      <div className="flex justify-between items-center">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Dashboard Overview</h1>
+          <p className="text-gray-500 mt-1">High-level financial analytics and spending trends</p>
+        </div>
+        <div className="flex items-center gap-4">
+          <div className="w-72">
+            <Input 
+              placeholder="Search descriptions..." 
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+        </div>
       </div>
 
       <TransactionFilterPanel 
          filters={filters} 
-         onFilterChange={(f) => setFilters({ ...f, limit: -1 })} 
+         onFilterChange={(f) => setFilters(f)} 
       />
+
+      {/* KPI Summary */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+         <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm flex flex-col">
+            <span className="text-sm font-medium text-gray-500">Total Credits (Inflow)</span>
+            <span className="text-3xl font-bold text-green-600">${totalCR.toFixed(2)}</span>
+         </div>
+         <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm flex flex-col">
+            <span className="text-sm font-medium text-gray-500">Total Debits (Outflow)</span>
+            <span className="text-3xl font-bold text-rose-600">${totalDR.toFixed(2)}</span>
+         </div>
+      </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm transition-all hover:shadow-md">
@@ -60,9 +110,11 @@ export function DashboardScreen() {
                 <Tooltip 
                   cursor={{ fill: '#f8fafc' }} 
                   contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                  formatter={(v: any) => [`$${Number(v).toFixed(2)}`, 'Spend Total']} 
+                  formatter={(v: any, name: any) => [`$${Number(v).toFixed(2)}`, name]} 
                 />
-                <Bar dataKey="amount" fill="#3b82f6" radius={[6, 6, 0, 0]} barSize={40} />
+                <Legend iconType="circle" wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }} />
+                <Bar dataKey="dr" name="Debits" fill="#e11d48" radius={[4, 4, 0, 0]} maxBarSize={40} />
+                <Bar dataKey="cr" name="Credits" fill="#10b981" radius={[4, 4, 0, 0]} maxBarSize={40} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -78,9 +130,11 @@ export function DashboardScreen() {
                 <YAxis fontSize={12} tickLine={false} axisLine={false} tickFormatter={(v) => `$${v}`} dx={-10} />
                 <Tooltip 
                   contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                  formatter={(v: any) => [`$${Number(v).toFixed(2)}`, 'Spend Total']} 
+                  formatter={(v: any, name: any) => [`$${Number(v).toFixed(2)}`, name]} 
                 />
-                <Line type="monotone" dataKey="amount" stroke="#10b981" strokeWidth={4} dot={{ r: 4, strokeWidth: 2 }} activeDot={{ r: 6, strokeWidth: 0 }} />
+                <Legend iconType="circle" wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }} />
+                <Line name="Debits" type="monotone" dataKey="dr" stroke="#e11d48" strokeWidth={3} dot={{ r: 4, strokeWidth: 2 }} activeDot={{ r: 6, strokeWidth: 0 }} />
+                <Line name="Credits" type="monotone" dataKey="cr" stroke="#10b981" strokeWidth={3} dot={{ r: 4, strokeWidth: 2 }} activeDot={{ r: 6, strokeWidth: 0 }} />
               </LineChart>
             </ResponsiveContainer>
           </div>

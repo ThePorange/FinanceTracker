@@ -13,6 +13,7 @@ import { DataImportScreen } from './features/admin/DataImportScreen';
 import { StagingDataScreen } from './features/admin/StagingDataScreen';
 import { AccountGroupsScreen } from './features/admin/AccountGroupsScreen';
 import { RulesScreen } from './features/admin/RulesScreen';
+import { TransactionFilterProvider } from './features/transactions/TransactionFilterContext';
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } }
@@ -122,34 +123,36 @@ function App() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
-        <div className="flex h-screen bg-slate-50 overflow-hidden font-sans text-slate-900 selection:bg-blue-200">
-          <Sidebar isAdminMode={isAdminMode} setIsAdminMode={setIsAdminMode} />
-          <main className="flex-1 overflow-y-auto relative bg-[#f8fafc]">
-            <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(#e2e8f0_1px,transparent_1px)] [background-size:24px_24px] opacity-40"></div>
-            <div className="relative z-0 min-h-full">
-              <Routes>
-                <Route path="/" element={<Navigate to={isAdminMode ? "/admin/etl" : "/dashboard"} replace />} />
-                
-                {/* User Routes */}
-                <Route path="/dashboard" element={<DashboardScreen />} />
-                <Route path="/transactions" element={<TransactionsScreen />} />
-                <Route path="/categories" element={<CategoryManagementScreen />} />
-                <Route path="/mappings" element={<MappingRulesScreen />} />
+      <TransactionFilterProvider>
+        <BrowserRouter>
+          <div className="flex h-screen bg-slate-50 overflow-hidden font-sans text-slate-900 selection:bg-blue-200">
+            <Sidebar isAdminMode={isAdminMode} setIsAdminMode={setIsAdminMode} />
+            <main className="flex-1 overflow-y-auto relative bg-[#f8fafc]">
+              <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(#e2e8f0_1px,transparent_1px)] [background-size:24px_24px] opacity-40"></div>
+              <div className="relative z-0 min-h-full">
+                <Routes>
+                  <Route path="/" element={<Navigate to={isAdminMode ? "/admin/etl" : "/dashboard"} replace />} />
+                  
+                  {/* User Routes */}
+                  <Route path="/dashboard" element={<DashboardScreen />} />
+                  <Route path="/transactions" element={<TransactionsScreen />} />
+                  <Route path="/categories" element={<CategoryManagementScreen />} />
+                  <Route path="/mappings" element={<MappingRulesScreen />} />
 
-                {/* Admin Routes */}
-                <Route path="/admin/etl" element={<EtlJobsScreen />} />
-                <Route path="/admin/import" element={<DataImportScreen />} />
-                <Route path="/admin/sources" element={<DataSourcesScreen />} />
-                <Route path="/admin/groups" element={<AccountGroupsScreen />} />
-                <Route path="/admin/staging" element={<StagingDataScreen />} />
-                <Route path="/admin/rules" element={<RulesScreen />} />
-                <Route path="/admin/tables/:tableName" element={<SystemTableScreen />} />
-              </Routes>
-            </div>
-          </main>
-        </div>
-      </BrowserRouter>
+                  {/* Admin Routes */}
+                  <Route path="/admin/etl" element={<EtlJobsScreen />} />
+                  <Route path="/admin/import" element={<DataImportScreen />} />
+                  <Route path="/admin/sources" element={<DataSourcesScreen />} />
+                  <Route path="/admin/groups" element={<AccountGroupsScreen />} />
+                  <Route path="/admin/staging" element={<StagingDataScreen />} />
+                  <Route path="/admin/rules" element={<RulesScreen />} />
+                  <Route path="/admin/tables/:tableName" element={<SystemTableScreen />} />
+                </Routes>
+              </div>
+            </main>
+          </div>
+        </BrowserRouter>
+      </TransactionFilterProvider>
     </QueryClientProvider>
   );
 }

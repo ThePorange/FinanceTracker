@@ -49,7 +49,15 @@ function resolveTransactionFinance(rawAmt: number | string, rawDrcr: string | nu
    const absAmt = Math.abs(amount);
 
    if (test1Matched) {
-       amount = drcr === 'DR' ? -absAmt : absAmt;
+       if (drcr === 'DR' && amount > 0) {
+           drcr = 'CR';
+           amount = absAmt;
+       } else if (drcr === 'CR' && amount < 0) {
+           drcr = 'DR';
+           amount = -absAmt;
+       } else {
+           amount = drcr === 'DR' ? -absAmt : absAmt;
+       }
    } else {
        if (isDebitNegative) {
            drcr = amount < 0 ? 'DR' : 'CR';

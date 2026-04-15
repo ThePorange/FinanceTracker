@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useTransactions } from './useTransactions';
+import { useTransactionFilters } from './TransactionFilterContext';
 import { DataTable } from '../../components/shared/DataTable';
 import type { Transaction } from '../../types';
 import { TransactionDetailPanel } from './TransactionDetailPanel';
@@ -10,9 +11,8 @@ import { TransactionFilterPanel } from './TransactionFilterPanel';
 const PAGE_SIZE = 50;
 
 export function TransactionsScreen() {
-  const [filters, setFilters] = useState<Record<string, any>>({});
+  const { filters, setFilters, search, setSearch } = useTransactionFilters();
   const { data: transactions, isLoading, error } = useTransactions(filters);
-  const [search, setSearch] = useState('');
   const [selectedTxn, setSelectedTxn] = useState<Transaction | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
 
@@ -22,6 +22,17 @@ export function TransactionsScreen() {
     const lower = search.toLowerCase();
     return transactions.filter(t => t.description?.toLowerCase().includes(lower));
   }, [transactions, search]);
+
+  const { totalCR, totalDR } = useMemo(() => {
+    let cr = 0;
+    let dr = 0;
+    filtered.forEach(t => {
+      const amt = Math.abs(t.amount || 0);
+      if (t.drcr === 'CR') cr += amt;
+      else if (t.drcr === 'DR') dr += amt;
+    });
+    return { totalCR: cr, totalDR: dr };
+  }, [filtered]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const paginated = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
@@ -88,6 +99,18 @@ export function TransactionsScreen() {
          filters={filters} 
          onFilterChange={(f) => { setFilters(f); setCurrentPage(1); }} 
       />
+
+      {/* KPI Summary */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+         <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm flex flex-col">
+            <span className="text-sm font-medium text-gray-500">Total Credits (Inflow)</span>
+            <span className="text-3xl font-bold text-green-600">${totalCR.toFixed(2)}</span>
+         </div>
+         <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm flex flex-col">
+            <span className="text-sm font-medium text-gray-500">Total Debits (Outflow)</span>
+            <span className="text-3xl font-bold text-rose-600">${totalDR.toFixed(2)}</span>
+         </div>
+      </div>
       
       <DataTable 
         headers={['Posting Date', 'Transaction Date', 'Description', 'Amount', 'DR/CR', 'Account', 'Auto Category', 'User Category', 'Type']}

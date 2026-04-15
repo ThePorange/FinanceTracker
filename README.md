@@ -41,11 +41,15 @@ The project currently provides a strictly typed NestJS REST API with modular arc
 
 2. **Staging Module**
    - Upload CSV preview: `POST /staging/preview` (returns headers and sample rows to present visually into UI)
-   - Dynamic table creation: `POST /staging/confirm` (creates the unqiue `staging_<account_name>` tables and stores parameter mappings).
+   - Dynamic table creation: `POST /staging/confirm` (creates the unique `staging_<account_name>` tables and stores parameter mappings, including identifying which columns represent amounts and explicit debit/credit flags).
 
 3. **ETL Module**
    - Ingest CSV: `POST /import/:account_source_id`
    - Migrates data into `sys_transaction`. Validates checksum duplicates constraints and data length requirements. Ensures unique constraints and auto-assigns Source-Derived categorizations seamlessly into `sys_transaction_category_map`.
+   - **Financial Debit/Credit Logic:** Dynamically standardizes transactions during ingestion:
+     - **Explicit DR/CR:** If a `drcr` mapping exists ('DR', 'CR', 'DEBIT', 'CREDIT'), it determines the direction explicitly. 
+     - **Implicit Calculation:** If no explicit flag is mapped, it calculates the direction based on the amount's sign and the Account Source's `debit_negative` configuration.
+     - **Standardized Output:** Debits are uniformly converted and stored as native negative mathematical values, and Credits are stored as positive values.
 
 4. **Rule Engine Module**
    - Evaluate Rules: `POST /rules/apply/:account_source_id`
