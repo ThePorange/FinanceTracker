@@ -9,7 +9,24 @@ interface TransactionFilterPanelProps {
 
 export function TransactionFilterPanel({ filters, onFilterChange }: TransactionFilterPanelProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const [localFilters, setLocalFilters] = useState<Record<string, any>>(filters);
   
+  // Sync when filters are explicitly cleared or changed from the outside
+  React.useEffect(() => {
+    setLocalFilters(filters);
+  }, [filters]);
+
+  // Debounce the push to the parent context
+  React.useEffect(() => {
+    const timer = setTimeout(() => {
+      // Only push if there's a difference to prevent infinite render loops if references change
+      if (JSON.stringify(localFilters) !== JSON.stringify(filters)) {
+        onFilterChange(localFilters);
+      }
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [localFilters, filters, onFilterChange]);
+
   const { data: sourcesData } = useSystemData('sys_account_source');
   const { data: groupsData } = useSystemData('sys_account_group');
   const { data: typesData } = useSystemData('sys_transaction_type');
@@ -21,11 +38,13 @@ export function TransactionFilterPanel({ filters, onFilterChange }: TransactionF
   const rules = rulesData?.data || rulesData || [];
 
   const handleUpdate = (key: string, value: any) => {
-    const newFilters = { ...filters, [key]: value };
-    if (value === undefined || value === null || value === '') {
-      delete newFilters[key];
-    }
-    onFilterChange(newFilters);
+    setLocalFilters(prev => {
+      const next = { ...prev, [key]: value };
+      if (value === undefined || value === null || value === '') {
+        delete next[key];
+      }
+      return next;
+    });
   };
 
   const clearAll = () => onFilterChange({});
@@ -69,14 +88,14 @@ export function TransactionFilterPanel({ filters, onFilterChange }: TransactionF
             <div className="flex gap-2">
               <input 
                 type="date" 
-                value={filters.startDate || ''} 
+                value={localFilters.startDate || ''} 
                 onChange={e => handleUpdate('startDate', e.target.value)}
                 className="w-full bg-white border border-gray-200 rounded-lg px-2 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               />
               <span className="text-gray-400 self-center">to</span>
               <input 
                 type="date" 
-                value={filters.endDate || ''} 
+                value={localFilters.endDate || ''} 
                 onChange={e => handleUpdate('endDate', e.target.value)}
                 className="w-full bg-white border border-gray-200 rounded-lg px-2 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               />
@@ -88,7 +107,7 @@ export function TransactionFilterPanel({ filters, onFilterChange }: TransactionF
             <label className="block text-sm font-medium text-gray-700 mb-1">Amount</label>
             <div className="flex gap-2">
               <select 
-                value={filters.amountOp || '='} 
+                value={localFilters.amountOp || '='} 
                 onChange={e => handleUpdate('amountOp', e.target.value)}
                 className="w-16 bg-white border border-gray-200 rounded-lg px-2 py-2 text-sm focus:ring-2 focus:ring-blue-500"
               >
@@ -99,7 +118,7 @@ export function TransactionFilterPanel({ filters, onFilterChange }: TransactionF
               <input 
                 type="number" 
                 placeholder="0.00"
-                value={filters.amountVal || ''} 
+                value={localFilters.amountVal || ''} 
                 onChange={e => handleUpdate('amountVal', e.target.value)}
                 className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               />
@@ -110,7 +129,7 @@ export function TransactionFilterPanel({ filters, onFilterChange }: TransactionF
           <div>
              <label className="block text-sm font-medium text-gray-700 mb-1">Account Group</label>
              <select 
-                value={filters.groupId || ''} 
+                value={localFilters.groupId || ''} 
                 onChange={e => handleUpdate('groupId', e.target.value)}
                 className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
               >
@@ -123,7 +142,7 @@ export function TransactionFilterPanel({ filters, onFilterChange }: TransactionF
           <div>
              <label className="block text-sm font-medium text-gray-700 mb-1">Account Source</label>
              <select 
-                value={filters.sourceId || ''} 
+                value={localFilters.sourceId || ''} 
                 onChange={e => handleUpdate('sourceId', e.target.value)}
                 className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
               >
@@ -138,7 +157,7 @@ export function TransactionFilterPanel({ filters, onFilterChange }: TransactionF
              <input 
                 type="text" 
                 placeholder="e.g. Dining"
-                value={filters.category || ''} 
+                value={localFilters.category || ''} 
                 onChange={e => handleUpdate('category', e.target.value)}
                 className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               />
@@ -148,7 +167,7 @@ export function TransactionFilterPanel({ filters, onFilterChange }: TransactionF
           <div>
              <label className="block text-sm font-medium text-gray-700 mb-1">Transaction Type</label>
              <select 
-                value={filters.typeId || ''} 
+                value={localFilters.typeId || ''} 
                 onChange={e => handleUpdate('typeId', e.target.value)}
                 className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
               >
@@ -161,7 +180,7 @@ export function TransactionFilterPanel({ filters, onFilterChange }: TransactionF
           <div>
              <label className="block text-sm font-medium text-gray-700 mb-1">Applied Rule</label>
              <select 
-                value={filters.ruleId || ''} 
+                value={localFilters.ruleId || ''} 
                 onChange={e => handleUpdate('ruleId', e.target.value)}
                 className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
               >
@@ -174,7 +193,7 @@ export function TransactionFilterPanel({ filters, onFilterChange }: TransactionF
           <div>
              <label className="block text-sm font-medium text-gray-700 mb-1">Debit / Credit</label>
              <select 
-                value={filters.drcr || ''} 
+                value={localFilters.drcr || ''} 
                 onChange={e => handleUpdate('drcr', e.target.value)}
                 className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
               >

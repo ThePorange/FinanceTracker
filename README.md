@@ -30,6 +30,15 @@ A banking analytics web app that ingests account and transaction data, powering 
    ```
    The backend runs successfully on `http://localhost:3000`.
 
+4. **Run the Frontend UI**
+   The frontend is a React application powered by Vite. In a separate terminal, run:
+   ```bash
+   cd frontend
+   npm install
+   npm run dev
+   ```
+   The frontend will be available at the local URL provided by Vite (typically `http://localhost:5173`).
+
 ## Backend API Overview
 
 The project currently provides a strictly typed NestJS REST API with modular architecture supporting custom SQLite data ingestion.

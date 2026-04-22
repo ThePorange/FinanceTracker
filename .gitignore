@@ -105,3 +105,12 @@ Thumbs.db
 ehthumbs.db
 Desktop.ini
 $RECYCLE.BIN/
+
+#working files
+working/*
+
+# docs
+docs/*
+
+# temp
+.temp/*

@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useTransactions } from './useTransactions';
 import { useTransactionFilters } from './TransactionFilterContext';
 import { DataTable } from '../../components/shared/DataTable';
@@ -37,7 +37,9 @@ export function TransactionsScreen() {
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const paginated = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
 
-  useMemo(() => setCurrentPage(1), [search]);
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search]);
 
   const exportToCsv = () => {
     if (!filtered || filtered.length === 0) return;
