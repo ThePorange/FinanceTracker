@@ -75,6 +75,7 @@ CREATE TABLE sys_transaction (
     sys_transaction_type_id INTEGER,
     record INTEGER,
     records INTEGER,
+    row_checksum VARCHAR(250),
     FOREIGN KEY(sys_import_log_id) REFERENCES sys_import_log(sys_import_log_id),
     FOREIGN KEY(sys_transaction_type_id) REFERENCES sys_transaction_type(sys_transaction_type_id),
     FOREIGN KEY(base_curr_id) REFERENCES sys_currency(sys_currency_id),   
@@ -265,8 +266,9 @@ INSERT INTO sys_staging_fields (staging_table_fieldname, datatype , default_valu
 INSERT INTO sys_staging_fields (staging_table_fieldname, datatype , default_value, derived_field, unique_records ) VALUES ('account_source_filename', 'VARCHAR(250)', '', 1, 0);
 INSERT INTO sys_staging_fields (staging_table_fieldname, datatype , default_value, derived_field, unique_records ) VALUES ('account_source_row', 'INT', '', 1, 0);
 INSERT INTO sys_staging_fields (staging_table_fieldname, datatype , default_value, derived_field, unique_records ) VALUES ('abs_debit_credit', 'INT', 0, 1, 0);
-INSERT INTO sys_staging_fields (staging_table_fieldname, datatype , default_value, derived_field, unique_records ) VALUES ('record', 'INT', 1, 1, 0);
-INSERT INTO sys_staging_fields (staging_table_fieldname, datatype , default_value, derived_field, unique_records ) VALUES ('records', 'INT', '', 1, 0);
+INSERT INTO sys_staging_fields (staging_table_fieldname, datatype , default_value, derived_field, unique_records ) VALUES ('record', 'INT', 1, 1, 1);
+INSERT INTO sys_staging_fields (staging_table_fieldname, datatype , default_value, derived_field, unique_records ) VALUES ('records', 'INT', '', 1, 1);
+INSERT INTO sys_staging_fields (staging_table_fieldname, datatype , default_value, derived_field, unique_records ) VALUES ('row_checksum', 'VARCHAR(250)', '', 1, 0); 
 INSERT INTO sys_staging_fields (staging_table_fieldname, datatype , default_value, derived_field, unique_records ) VALUES ('created_date', 'INT', 'CURRENT_TIMESTAMP', 1, 0);
 
 INSERT INTO sys_account_source (sys_account_source_id, account_source_name) VALUES (1, 'System rule');

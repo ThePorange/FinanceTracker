@@ -269,6 +269,17 @@ export class EtlService {
              val = rowGroupIndices[i].record;
           } else if (m.transaction_table_fieldname === 'records') {
              val = rowGroupIndices[i].records;
+          } else if (m.transaction_table_fieldname === 'row_checksum') {
+             const uniqueValsToHash = mappings
+                .filter(um => um.unique_records === 1 || um.unique_records === 'y' || um.unique_records === true)
+                .map(um => {
+                   if (um.transaction_table_fieldname === 'record') return rowGroupIndices[i].record;
+                   if (um.transaction_table_fieldname === 'records') return rowGroupIndices[i].records;
+                   return stgRow[um.staging_table_fieldname];
+                })
+                .map(v => String(v || ''))
+                .join('|');
+             val = crypto.createHash('sha256').update(uniqueValsToHash).digest('hex');
           }
 
           if (!m.transaction_table_fieldname || m.transaction_table_fieldname === 'n/a') continue;
