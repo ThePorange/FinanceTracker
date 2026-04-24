@@ -5,7 +5,7 @@ import { DataTable } from '../../components/shared/DataTable';
 import type { Transaction } from '../../types';
 import { TransactionDetailPanel } from './TransactionDetailPanel';
 import { Input } from '../../components/shared/Input';
-import { ChevronLeft, ChevronRight, Download } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Download, ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react';
 import { TransactionFilterPanel } from './TransactionFilterPanel';
 
 const PAGE_SIZE = 50;
@@ -15,13 +15,52 @@ export function TransactionsScreen() {
   const { data: transactions, isLoading, error } = useTransactions(filters);
   const [selectedTxn, setSelectedTxn] = useState<Transaction | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
+  const [sortKey, setSortKey] = useState<string>('posting_date');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+
+  const handleSort = (key: string) => {
+    if (sortKey === key) {
+      setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortKey(key);
+      setSortDir('asc');
+    }
+    setCurrentPage(1);
+  };
+
+  const SortIcon = ({ col }: { col: string }) => {
+    if (sortKey !== col) return <ChevronsUpDown size={13} className="inline ml-1 opacity-40" />;
+    return sortDir === 'asc'
+      ? <ChevronUp size={13} className="inline ml-1 text-blue-300" />
+      : <ChevronDown size={13} className="inline ml-1 text-blue-300" />;
+  };
+
+  const th = (label: string, col: string) => (
+    <button onClick={() => handleSort(col)} className="flex items-center gap-0.5 hover:text-blue-300 transition-colors font-medium whitespace-nowrap">
+      {label}<SortIcon col={col} />
+    </button>
+  );
 
   const filtered = useMemo(() => {
-    if (!transactions) return [];
-    if (!search) return transactions;
-    const lower = search.toLowerCase();
-    return transactions.filter(t => t.description?.toLowerCase().includes(lower));
-  }, [transactions, search]);
+    let source = transactions || [];
+    if (search) {
+      const lower = search.toLowerCase();
+      source = source.filter(t => t.description?.toLowerCase().includes(lower));
+    }
+    const sorted = [...source].sort((a: any, b: any) => {
+      let av = a[sortKey];
+      let bv = b[sortKey];
+      if (av == null) av = '';
+      if (bv == null) bv = '';
+      if (typeof av === 'number' && typeof bv === 'number') {
+        return sortDir === 'asc' ? av - bv : bv - av;
+      }
+      return sortDir === 'asc'
+        ? String(av).localeCompare(String(bv))
+        : String(bv).localeCompare(String(av));
+    });
+    return sorted;
+  }, [transactions, search, sortKey, sortDir]);
 
   const { totalCR, totalDR } = useMemo(() => {
     let cr = 0;
@@ -39,7 +78,7 @@ export function TransactionsScreen() {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [search]);
+  }, [search, sortKey, sortDir]);
 
   const exportToCsv = () => {
     if (!filtered || filtered.length === 0) return;
@@ -115,7 +154,17 @@ export function TransactionsScreen() {
       </div>
       
       <DataTable 
-        headers={['Posting Date', 'Transaction Date', 'Description', 'Amount', 'DR/CR', 'Account', 'Auto Category', 'User Category', 'Type']}
+        headers={[
+          th('Posting Date', 'posting_date'),
+          th('Transaction Date', 'transaction_date'),
+          th('Description', 'description'),
+          th('Amount', 'amount'),
+          th('DR/CR', 'drcr'),
+          th('Account', 'account'),
+          th('Auto Category', 'autoCategory'),
+          th('User Category', 'userCategory'),
+          th('Type', 'transaction_type'),
+        ]}
         isLoading={isLoading}
       >
         {paginated.map(txn => (
@@ -124,10 +173,10 @@ export function TransactionsScreen() {
             className="hover:bg-gray-50 cursor-pointer transition-colors group"
             onClick={() => setSelectedTxn(txn)}
           >
-            <td className="px-4 py-4 text-gray-600 group-hover:text-gray-900">{txn.posting_date ? new Date(txn.posting_date).toLocaleDateString() : '-'}</td>
-            <td className="px-4 py-4 text-gray-600 group-hover:text-gray-900">{txn.transaction_date ? new Date(txn.transaction_date).toLocaleDateString() : '-'}</td>
+            <td className="px-4 py-4 text-gray-600 group-hover:text-gray-900 whitespace-nowrap">{txn.posting_date ? new Date(txn.posting_date).toLocaleDateString() : '-'}</td>
+            <td className="px-4 py-4 text-gray-600 group-hover:text-gray-900 whitespace-nowrap">{txn.transaction_date ? new Date(txn.transaction_date).toLocaleDateString() : '-'}</td>
             <td className="px-4 py-4 font-medium text-gray-800">{txn.description}</td>
-            <td className="px-4 py-4 font-medium text-gray-900">${txn.amount?.toFixed(2) || '0.00'}</td>
+            <td className="px-4 py-4 font-medium text-gray-900 whitespace-nowrap">${txn.amount?.toFixed(2) || '0.00'}</td>
             <td className="px-4 py-4 text-gray-600 font-bold">{txn.drcr || '-'}</td>
             <td className="px-4 py-4 text-gray-500">{txn.account}</td>
             <td className="px-4 py-4">
@@ -190,3 +239,4 @@ export function TransactionsScreen() {
     </div>
   );
 }
+

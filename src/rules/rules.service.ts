@@ -96,6 +96,16 @@ export class RulesService {
          const field = json.field || 'base_amount';
          return { where: `${field} >= ? AND ${field} <= ?`, params: [json.min, json.max], confidence: 0.80 };
      }
+     if (json.type === 'select_transactions') {
+         if (!json.checksums || !Array.isArray(json.checksums) || json.checksums.length === 0) return { where: '', params: [], confidence: 0 };
+         const placeholders = json.checksums.map(() => '?').join(',');
+         return { where: `row_checksum IN (${placeholders})`, params: json.checksums, confidence: 1.0 };
+     }
+     if (json.type === 'exclude_transactions') {
+         if (!json.checksums || !Array.isArray(json.checksums) || json.checksums.length === 0) return { where: '', params: [], confidence: 0 };
+         const placeholders = json.checksums.map(() => '?').join(',');
+         return { where: `row_checksum NOT IN (${placeholders})`, params: json.checksums, confidence: 1.0 };
+     }
      if ((json.type === 'and' || json.type === 'or') && json.conditions) {
          const clauses = [];
          const allParams = [];

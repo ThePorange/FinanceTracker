@@ -19,11 +19,16 @@ export function DashboardScreen() {
     return transactions.filter(t => t.description?.toLowerCase().includes(lower));
   }, [transactions, search]);
 
-  const { categorySpend, monthlyTrend, totalCR, totalDR } = useMemo(() => {
-    if (!filteredTransactions) return { categorySpend: [], monthlyTrend: [], totalCR: 0, totalDR: 0 };
+  const { categorySpend, monthlyTrend, yoyTrend, ytdTrend, availableYears, totalCR, totalDR } = useMemo(() => {
+    if (!filteredTransactions) return { categorySpend: [], monthlyTrend: [], yoyTrend: [], ytdTrend: [], availableYears: [], totalCR: 0, totalDR: 0 };
 
     const catMap: Record<string, { dr: number, cr: number }> = {};
     const monthMap: Record<string, { dr: number, cr: number }> = {};
+    
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const yoyMap: Record<string, Record<string, number>> = {};
+    monthNames.forEach(m => yoyMap[m] = {});
+    const yearsSet = new Set<string>();
 
     let totalCR = 0;
     let totalDR = 0;
@@ -33,8 +38,13 @@ export function DashboardScreen() {
       const amt = Math.abs(t.amount || 0);
 
       const date = new Date(t.date || t.transaction_date || t.posting_date || new Date());
-      const monthStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+      const year = String(date.getFullYear());
+      const monthIdx = date.getMonth();
+      const monthName = monthNames[monthIdx];
+      const monthStr = `${year}-${String(monthIdx + 1).padStart(2, '0')}`;
       
+      yearsSet.add(year);
+
       if (!catMap[cat]) catMap[cat] = { dr: 0, cr: 0 };
       if (!monthMap[monthStr]) monthMap[monthStr] = { dr: 0, cr: 0 };
 
@@ -47,6 +57,10 @@ export function DashboardScreen() {
         catMap[cat].dr += amt;
         monthMap[monthStr].dr += amt;
       }
+
+      // Track absolute volume of whatever is currently filtered for YoY chart
+      if (!yoyMap[monthName][year]) yoyMap[monthName][year] = 0;
+      yoyMap[monthName][year] += amt;
     });
 
     const categorySpend = Object.entries(catMap)
@@ -58,7 +72,24 @@ export function DashboardScreen() {
       .map(([month, vals]) => ({ month, dr: vals.dr, cr: vals.cr }))
       .sort((a, b) => a.month.localeCompare(b.month));
 
-    return { categorySpend, monthlyTrend, totalCR, totalDR };
+    const yoyTrend = monthNames.map(month => {
+      return { month, ...yoyMap[month] };
+    });
+    
+    const availableYears = Array.from(yearsSet).sort();
+
+    const ytdSums: Record<string, number> = {};
+    const ytdTrend = monthNames.map(month => {
+      const point: any = { month };
+      availableYears.forEach(year => {
+        if (!ytdSums[year]) ytdSums[year] = 0;
+        ytdSums[year] += (yoyMap[month][year] || 0);
+        point[year] = ytdSums[year];
+      });
+      return point;
+    });
+
+    return { categorySpend, monthlyTrend, yoyTrend, ytdTrend, availableYears, totalCR, totalDR };
   }, [filteredTransactions]);
 
   if (isLoading) return <div className="p-8 text-gray-500 animate-pulse">Computing analytics...</div>;
@@ -121,7 +152,7 @@ export function DashboardScreen() {
         </div>
 
         <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm transition-all hover:shadow-md">
-          <h2 className="text-lg font-bold text-gray-800 mb-6 flex items-center gap-2">Monthly Splend Trend</h2>
+          <h2 className="text-lg font-bold text-gray-800 mb-6 flex items-center gap-2">Monthly Spend Trend</h2>
           <div className="h-80">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={monthlyTrend} margin={{ top: 10, right: 10, left: 0, bottom: 20 }}>
@@ -135,6 +166,66 @@ export function DashboardScreen() {
                 <Legend iconType="circle" wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }} />
                 <Line name="Debits" type="monotone" dataKey="dr" stroke="#e11d48" strokeWidth={3} dot={{ r: 4, strokeWidth: 2 }} activeDot={{ r: 6, strokeWidth: 0 }} />
                 <Line name="Credits" type="monotone" dataKey="cr" stroke="#10b981" strokeWidth={3} dot={{ r: 4, strokeWidth: 2 }} activeDot={{ r: 6, strokeWidth: 0 }} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm transition-all hover:shadow-md lg:col-span-2">
+          <h2 className="text-lg font-bold text-gray-800 mb-6 flex items-center gap-2">Year-over-Year (Total Volume)</h2>
+          <div className="h-80">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={yoyTrend} margin={{ top: 10, right: 10, left: 0, bottom: 20 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                <XAxis dataKey="month" fontSize={12} tickLine={false} axisLine={false} dy={10} />
+                <YAxis fontSize={12} tickLine={false} axisLine={false} tickFormatter={(v) => `$${v}`} dx={-10} />
+                <Tooltip 
+                  contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                  formatter={(v: any, name: any) => [`$${Number(v).toFixed(2)}`, name]} 
+                />
+                <Legend iconType="circle" wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }} />
+                {availableYears.map((year, idx) => (
+                  <Line 
+                    key={year}
+                    name={year} 
+                    type="monotone" 
+                    dataKey={year} 
+                    stroke={['#3b82f6', '#e11d48', '#10b981', '#f59e0b', '#8b5cf6'][idx % 5]} 
+                    strokeWidth={3} 
+                    dot={{ r: 4, strokeWidth: 2 }} 
+                    activeDot={{ r: 6, strokeWidth: 0 }} 
+                  />
+                ))}
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm transition-all hover:shadow-md lg:col-span-2">
+          <h2 className="text-lg font-bold text-gray-800 mb-6 flex items-center gap-2">Year-to-Date (Cumulative Volume)</h2>
+          <div className="h-80">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={ytdTrend} margin={{ top: 10, right: 10, left: 0, bottom: 20 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                <XAxis dataKey="month" fontSize={12} tickLine={false} axisLine={false} dy={10} />
+                <YAxis fontSize={12} tickLine={false} axisLine={false} tickFormatter={(v) => `$${v}`} dx={-10} />
+                <Tooltip 
+                  contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                  formatter={(v: any, name: any) => [`$${Number(v).toFixed(2)}`, name]} 
+                />
+                <Legend iconType="circle" wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }} />
+                {availableYears.map((year, idx) => (
+                  <Line 
+                    key={year}
+                    name={year} 
+                    type="monotone" 
+                    dataKey={year} 
+                    stroke={['#3b82f6', '#e11d48', '#10b981', '#f59e0b', '#8b5cf6'][idx % 5]} 
+                    strokeWidth={3} 
+                    dot={{ r: 4, strokeWidth: 2 }} 
+                    activeDot={{ r: 6, strokeWidth: 0 }} 
+                  />
+                ))}
               </LineChart>
             </ResponsiveContainer>
           </div>

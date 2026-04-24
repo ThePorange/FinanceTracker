@@ -1,18 +1,20 @@
 import { useState } from 'react';
 import { useSystemData } from './useSystemData';
 import { Input } from '../../components/shared/Input';
-import { Play, Plus, Trash2, Save, FileJson } from 'lucide-react';
+import { Play, Plus, Trash2, Save, FileJson, ListChecks } from 'lucide-react';
 import { api } from '../../services/api';
+import { TransactionSelectorModal } from './TransactionSelectorModal';
 
 type RuleCondition = {
   id: string; // purely for UI tracking
-  type: 'contains' | 'equals' | 'date_range' | 'amount_range';
-  field: string;
+  type: 'contains' | 'equals' | 'date_range' | 'amount_range' | 'select_transactions' | 'exclude_transactions';
+  field?: string;
   value?: string;
   start?: string;
   end?: string;
   min?: number;
   max?: number;
+  checksums?: string[];
 };
 
 type RuleGroup = {
@@ -22,7 +24,7 @@ type RuleGroup = {
 
 export function RulesScreen() {
   const { data: rulesData, refetch: refetchRules } = useSystemData('sys_rules');
-  const { data: categoriesData } = useSystemData('sys_transaction_category');
+  const { data: categoriesData, refetch: refetchCategories } = useSystemData('sys_transaction_category');
   const { data: sourcesData } = useSystemData('sys_account_source');
 
   const rules = rulesData?.data || [];
@@ -34,19 +36,23 @@ export function RulesScreen() {
   // Form State
   const [ruleName, setRuleName] = useState('');
   const [sourceId, setSourceId] = useState<number | ''>('');
-  const [categoryId, setCategoryId] = useState<number | ''>('');
+  const [categoryInput, setCategoryInput] = useState('');
   const [groups, setGroups] = useState<RuleGroup[]>([]);
   const [lastRun, setLastRun] = useState<string | null>(null);
 
   const [isExecuting, setIsExecuting] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
+  // Modal State
+  const [activeSelectorCondition, setActiveSelectorCondition] = useState<{groupId: string, condId: string, type: string, checksums: string[]} | null>(null);
+
   // Load into form
   const handleSelectRule = (r: any) => {
     setSelectedRuleId(r.sys_rules_id);
     setRuleName(r.rule_name || '');
     setSourceId(r.sys_account_source_id || '');
-    setCategoryId(r.sys_transaction_category_id || '');
+    const cat = categories.find((c: any) => c.sys_transaction_category_id === r.sys_transaction_category_id);
+    setCategoryInput(cat ? cat.category_name : '');
     setLastRun(r.last_run || null);
     
     let parsed: any;
@@ -78,7 +84,7 @@ export function RulesScreen() {
     setSelectedRuleId(null);
     setRuleName('');
     setSourceId('');
-    setCategoryId('');
+    setCategoryInput('');
     setLastRun(null);
     setGroups([{ id: Math.random().toString(), conditions: [{ id: Math.random().toString(), type: 'contains', field: 'description', value: '' }] }]);
   };
@@ -118,9 +124,33 @@ export function RulesScreen() {
   };
 
   const handleSave = async () => {
-    if (!ruleName || !categoryId || groups.length === 0) return alert('Name, Target Category, and at least one condition block are required.');
+    if (!ruleName || !categoryInput.trim() || groups.length === 0) return alert('Name, Target Category, and at least one condition block are required.');
     
     setIsSaving(true);
+    
+    let finalCategoryId: number | null = null;
+    const existingCat = categories.find((c: any) => c.category_name.toLowerCase() === categoryInput.trim().toLowerCase());
+    
+    if (existingCat) {
+       finalCategoryId = existingCat.sys_transaction_category_id;
+    } else {
+       try {
+          const res = await fetch('/api/config/sys_transaction_category', {
+             method: 'POST',
+             headers: { 'Content-Type': 'application/json' },
+             body: JSON.stringify({ category_name: categoryInput.trim() })
+          });
+          if (!res.ok) throw new Error('Failed to create category');
+          const data = await res.json();
+          finalCategoryId = data.id;
+          await refetchCategories();
+       } catch (e) {
+          alert("Error creating new category.");
+          setIsSaving(false);
+          return;
+       }
+    }
+
     let finalJson: any = {};
     
     // Build JSON securely preventing empty strings parsing natively
@@ -151,7 +181,7 @@ export function RulesScreen() {
     const payload = {
        rule_name: ruleName,
        sys_account_source_id: sourceId || null,
-       sys_transaction_category_id: categoryId,
+       sys_transaction_category_id: finalCategoryId,
        rule_json: JSON.stringify(finalJson)
     };
 
@@ -292,14 +322,16 @@ export function RulesScreen() {
                     <div className="flex gap-4">
                        <div className="flex-1">
                           <label className="block text-sm font-medium text-gray-700 mb-1">Target Category</label>
-                          <select 
-                             value={categoryId} 
-                             onChange={e => setCategoryId(Number(e.target.value))}
+                          <input 
+                             list="category-options"
+                             value={categoryInput} 
+                             onChange={e => setCategoryInput(e.target.value)}
+                             placeholder="Select or type new..."
                              className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
-                          >
-                             <option value="" disabled>Select Target</option>
-                             {categories.map((c: any) => <option key={c.sys_transaction_category_id} value={c.sys_transaction_category_id}>{c.category_name}</option>)}
-                          </select>
+                          />
+                          <datalist id="category-options">
+                             {categories.map((c: any) => <option key={c.sys_transaction_category_id} value={c.category_name} />)}
+                          </datalist>
                        </div>
                        <div className="flex-1">
                           <label className="block text-sm font-medium text-gray-700 mb-1">Scoped Source (Optional)</label>
@@ -349,9 +381,11 @@ export function RulesScreen() {
                                             <option value="equals">Exact Match</option>
                                             <option value="amount_range">Amount Range</option>
                                             <option value="date_range">Date Range</option>
+                                            <option value="select_transactions">Select Transactions</option>
+                                            <option value="exclude_transactions">Exclude Transactions</option>
                                          </select>
                                          
-                                         {cond.type !== 'date_range' && (
+                                         {cond.type !== 'date_range' && cond.type !== 'select_transactions' && cond.type !== 'exclude_transactions' && (
                                             <select 
                                                value={cond.field} 
                                                onChange={e => updateCondition(group.id, cond.id, { field: e.target.value })}
@@ -388,7 +422,19 @@ export function RulesScreen() {
                                                   <input type="date" value={cond.end || ''} onChange={e => updateCondition(group.id, cond.id, { end: e.target.value })} className="w-1/2 bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"/>
                                                   <button onClick={() => removeCondition(group.id, cond.id)} className="text-gray-400 hover:text-red-500 ml-1"><Trash2 className="w-4 h-4"/></button>
                                                </>
-                                            )}
+                                             )}
+                                             {(cond.type === 'select_transactions' || cond.type === 'exclude_transactions') && (
+                                                <>
+                                                   <button 
+                                                      onClick={(e) => { e.preventDefault(); setActiveSelectorCondition({ groupId: group.id, condId: cond.id, type: cond.type, checksums: cond.checksums || [] }); }}
+                                                      className={`w-full bg-white border ${cond.type === 'exclude_transactions' ? 'border-red-200 text-red-700 hover:bg-red-50 focus:ring-red-500' : 'border-blue-200 text-blue-700 hover:bg-blue-50 focus:ring-blue-500'} rounded-lg px-3 py-2 text-sm font-medium focus:ring-2 flex justify-between items-center transition-colors`}
+                                                   >
+                                                      <span className="flex items-center gap-2"><ListChecks size={16} /> Manually {cond.type === 'exclude_transactions' ? 'Exclude' : 'Select'} Transactions</span>
+                                                      <span className={`${cond.type === 'exclude_transactions' ? 'bg-red-100 text-red-800' : 'bg-blue-100 text-blue-800'} text-xs px-2 py-0.5 rounded-full font-bold`}>{cond.checksums?.length || 0} {cond.type === 'exclude_transactions' ? 'Excluded' : 'Selected'}</span>
+                                                   </button>
+                                                   <button onClick={(e) => { e.preventDefault(); removeCondition(group.id, cond.id); }} className="text-gray-400 hover:text-red-500 ml-1"><Trash2 className="w-4 h-4"/></button>
+                                                </>
+                                             )}
                                          </div>
                                       </div>
                                    </div>
@@ -426,6 +472,18 @@ export function RulesScreen() {
            )}
         </div>
       </div>
+
+      {activeSelectorCondition && (
+        <TransactionSelectorModal 
+           mode={activeSelectorCondition.type === 'exclude_transactions' ? 'exclude' : 'select'}
+           initialChecksums={activeSelectorCondition.checksums}
+           onClose={() => setActiveSelectorCondition(null)}
+           onSave={(checksums) => {
+             updateCondition(activeSelectorCondition.groupId, activeSelectorCondition.condId, { checksums });
+             setActiveSelectorCondition(null);
+           }}
+        />
+      )}
     </div>
   );
 }

@@ -154,6 +154,21 @@ export const api = {
     if (!response.ok) throw new Error('Failed to update source');
     return response.json();
   },
+  deleteSource: async (id: number) => {
+    const response = await fetch(`${API_BASE}/sources/${id}`, {
+      method: 'DELETE',
+    });
+    if (!response.ok) {
+      const err = await response.text();
+      try {
+         const parsed = JSON.parse(err);
+         throw new Error(parsed.message || 'Failed to delete source');
+      } catch (e: any) {
+         throw new Error(e.message || `Failed to delete source: ${err}`);
+      }
+    }
+    return response.json();
+  },
 
   // --- Configuration (Admin) ---
   getConfig: async () => {

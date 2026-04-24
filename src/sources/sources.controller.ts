@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Put, Body, Param, ParseIntPipe } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Put, Delete, Body, Param, ParseIntPipe } from '@nestjs/common';
 import { SourcesService } from './sources.service';
 
 @Controller('sources')
@@ -43,5 +43,15 @@ export class SourcesController {
   @Patch(':id')
   updateSource(@Param('id', ParseIntPipe) id: number, @Body() body: any) {
     return this.sourcesService.updateSource(id, body);
+  }
+
+  @Delete(':id')
+  deleteSource(@Param('id', ParseIntPipe) id: number) {
+    try {
+      return this.sourcesService.deleteSource(id);
+    } catch(e: any) {
+      require('fs').writeFileSync('last_error.log', e.stack || e.message);
+      throw e;
+    }
   }
 }

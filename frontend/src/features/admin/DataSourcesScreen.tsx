@@ -1,21 +1,39 @@
 import { useState } from 'react';
-import { useSources, useUpdateSource, useDuplicateSource } from './useSources';
+import { useSources, useUpdateSource, useDuplicateSource, useDeleteSource } from './useSources';
 import { DataTable } from '../../components/shared/DataTable';
-import { Database, Plus, Copy } from 'lucide-react';
+import { Database, Plus, Copy, Trash2 } from 'lucide-react';
 import { SourceMappingWizard } from './SourceMappingWizard';
 
 export function DataSourcesScreen() {
   const { data: sources, isLoading } = useSources();
   const updateMutation = useUpdateSource();
   const duplicateMutation = useDuplicateSource();
+  const deleteMutation = useDeleteSource();
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [editSourceId, setEditSourceId] = useState<number | null>(null);
+
+  const handleDelete = (e: React.MouseEvent, s: any) => {
+    e.stopPropagation();
+    if (window.confirm(`Are you sure you want to permanently delete the data source '${s.name}'?`)) {
+      deleteMutation.mutate(s.id, {
+        onError: (err: any) => {
+          window.alert(err.message);
+        }
+      });
+    }
+  };
 
   const handleDuplicate = (e: React.MouseEvent, s: any) => {
     e.stopPropagation();
     const newName = window.prompt(`Enter new title to duplicate '${s.name}':`, `${s.name} (Copy)`);
     if (!newName) return;
-    duplicateMutation.mutate({ id: s.id, newName });
+
+    if (sources?.some((source: any) => source.name.toLowerCase() === newName.toLowerCase())) {
+      window.alert(`A data source with the name "${newName}" already exists. Please choose a unique name.`);
+      return;
+    }
+
+    duplicateMutation.mutate({ id: s.id, newName, config: s.config });
   };
 
   const toggleStatus = (e: React.MouseEvent, s: any) => {
@@ -49,6 +67,14 @@ export function DataSourcesScreen() {
           title="Duplicate Source"
         >
           <Copy size={16} />
+        </button>
+        <button 
+          onClick={(e) => handleDelete(e, s)}
+          disabled={deleteMutation.isPending}
+          className="p-1.5 text-slate-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors border border-transparent hover:border-red-200"
+          title="Delete Source"
+        >
+          <Trash2 size={16} />
         </button>
         <button 
           onClick={(e) => { e.stopPropagation(); setEditSourceId(s.id); setIsDrawerOpen(true); }}

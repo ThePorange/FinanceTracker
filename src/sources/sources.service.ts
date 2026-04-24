@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
 
 @Injectable()
@@ -183,5 +183,45 @@ export class SourcesService {
         debit_negative: row.debit_negative === 1
       }
     };
+  }
+
+  deleteSource(id: number) {
+    const db = this.db.getDb();
+    
+    // Validate source exists
+    this.getSource(id);
+
+    // Check foreign keys
+    const tables = [
+      'sys_transaction',
+      'sys_transaction_type',
+      'sys_import_log',
+      'sys_account_group_map',
+      'sys_rules'
+    ];
+
+    let inUse = false;
+    for (const t of tables) {
+      const count = db.prepare(`SELECT COUNT(*) as c FROM ${t} WHERE sys_account_source_id = ?`).get(id) as any;
+      if (count.c > 0) {
+        inUse = true;
+        break;
+      }
+    }
+
+    if (inUse) {
+      throw new BadRequestException('This data source cannot be deleted because it is currently linked to existing transactions, rules, or system configurations.');
+    }
+
+    // Drop staging table if it exists
+    const mappings = db.prepare('SELECT staging_tablename FROM sys_account_mapping WHERE sys_account_source_id = ? LIMIT 1').get(id) as any;
+    if (mappings) {
+      db.prepare(`DROP TABLE IF EXISTS ${mappings.staging_tablename}`).run();
+    }
+
+    db.prepare('DELETE FROM sys_account_mapping WHERE sys_account_source_id = ?').run(id);
+    db.prepare('DELETE FROM sys_account_source WHERE sys_account_source_id = ?').run(id);
+
+    return { success: true };
   }
 }

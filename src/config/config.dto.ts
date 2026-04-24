@@ -18,7 +18,6 @@ export class CreateSysAccountMappingDto {
 
 export class CreateSysTransactionCategoryDto {
   @IsString() category_name!: string;
-  @IsOptional() @IsInt() sys_account_source_id?: number;
 }
 
 export class CreateSysRulesDto {

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, NavLink, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { LayoutDashboard, Receipt, Tags, Network, Wallet, Database, Activity, ShieldAlert, UploadCloud, TableProperties, LayoutTemplate } from 'lucide-react';
+import { LayoutDashboard, Receipt, Tags, Network, Wallet, Database, Activity, ShieldAlert, UploadCloud, TableProperties, LayoutTemplate, BookMarked } from 'lucide-react';
 import { TransactionsScreen } from './features/transactions/TransactionsScreen';
 import { CategoryManagementScreen } from './features/categories/CategoryManagementScreen';
 import { MappingRulesScreen } from './features/mappings/MappingRulesScreen';
@@ -25,6 +25,7 @@ function Sidebar({ isAdminMode, setIsAdminMode }: { isAdminMode: boolean, setIsA
     { to: '/transactions', icon: <Receipt size={20} />, label: 'Transactions' },
     { to: '/categories', icon: <Tags size={20} />, label: 'Categories' },
     { to: '/mappings', icon: <Network size={20} />, label: 'Mapping Rules' },
+    { to: '/rules', icon: <BookMarked size={20} />, label: 'Rules Engine' },
   ];
 
   const adminLinks = [
@@ -33,7 +34,6 @@ function Sidebar({ isAdminMode, setIsAdminMode }: { isAdminMode: boolean, setIsA
     { to: '/admin/sources', icon: <Database size={20} />, label: 'Data Sources (Wizard)' },
     { to: '/admin/groups', icon: <Network size={20} />, label: 'Account Groups' },
     { to: '/admin/staging', icon: <LayoutTemplate size={20} />, label: 'Staging Area' },
-    { to: '/admin/rules', icon: <ShieldAlert size={20} />, label: 'Rules Engine' }
   ];
 
   const sysTableLinks = [
@@ -138,8 +138,8 @@ function App() {
                   <Route path="/transactions" element={<TransactionsScreen />} />
                   <Route path="/categories" element={<CategoryManagementScreen />} />
                   <Route path="/mappings" element={<MappingRulesScreen />} />
-
-                  {/* Admin Routes */}
+                  <Route path="/rules" element={<RulesScreen />} />
+                  <Route path="/admin/rules" element={<RulesScreen />} />
                   <Route path="/admin/etl" element={<EtlJobsScreen />} />
                   <Route path="/admin/import" element={<DataImportScreen />} />
                   <Route path="/admin/sources" element={<DataSourcesScreen />} />

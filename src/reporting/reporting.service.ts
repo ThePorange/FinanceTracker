@@ -21,7 +21,8 @@ export class ReportingService {
              CASE WHEN v.is_auto = 1 THEN v.category_name ELSE NULL END AS autoCategory,
              CASE WHEN v.is_auto = 0 THEN v.category_name ELSE NULL END AS userCategory,
              v.confidence AS category_confidence,
-             v.sys_rule_id 
+             v.sys_rule_id,
+             t.row_checksum
       FROM sys_transaction t 
       LEFT JOIN sys_account_source s ON t.sys_account_source_id = s.sys_account_source_id
       LEFT JOIN vw_transaction_final_category v ON t.sys_transaction_id = v.sys_transaction_id
@@ -38,7 +39,15 @@ export class ReportingService {
     if (queryFilters.groupId) params.push(queryFilters.groupId);
 
     if (queryFilters.startDate) { where.push(`COALESCE(t.transaction_date, t.posting_date, t.created_date) >= ?`); params.push(queryFilters.startDate); }
-    if (queryFilters.endDate) { where.push(`COALESCE(t.transaction_date, t.posting_date, t.created_date) <= ?`); params.push(queryFilters.endDate); }
+    if (queryFilters.endDate) { where.push(`COALESCE(t.transaction_date, t.posting_date, t.created_date) <= ?`); params.push(`${queryFilters.endDate} 23:59:59`); }
+
+    if (queryFilters.checksums) {
+      const checksumArray = queryFilters.checksums.split(',').filter(Boolean);
+      if (checksumArray.length > 0) {
+        where.push(`t.row_checksum IN (${checksumArray.map(() => '?').join(',')})`);
+        params.push(...checksumArray);
+      }
+    }
     
     if (queryFilters.amountOp && queryFilters.amountVal !== undefined && queryFilters.amountVal !== '') {
       const op = queryFilters.amountOp === '>' ? '>' : queryFilters.amountOp === '<' ? '<' : '=';
@@ -95,10 +104,10 @@ export class ReportingService {
       const txn = db.prepare('SELECT sys_account_source_id FROM sys_transaction WHERE sys_transaction_id = ?').get(id) as any;
       if (!txn) throw new Error('Transaction not found');
 
-      let cat = db.prepare('SELECT sys_transaction_category_id FROM sys_transaction_category WHERE category_name = ? AND sys_account_source_id = ?').get(categoryName, txn.sys_account_source_id) as any;
+      let cat = db.prepare('SELECT sys_transaction_category_id FROM sys_transaction_category WHERE category_name = ?').get(categoryName) as any;
       
       if (!cat && categoryName) {
-        const res = db.prepare('INSERT INTO sys_transaction_category (category_name, sys_account_source_id) VALUES (?, ?)').run(categoryName, txn.sys_account_source_id);
+        const res = db.prepare('INSERT INTO sys_transaction_category (category_name) VALUES (?)').run(categoryName);
         cat = { sys_transaction_category_id: res.lastInsertRowid };
       }
 

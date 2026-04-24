@@ -106,10 +106,8 @@ CREATE TABLE sys_account_mapping (
 CREATE TABLE sys_transaction_category (
     sys_transaction_category_id INTEGER PRIMARY KEY,
     category_name VARCHAR(250) NOT NULL,
-    sys_account_source_id INTEGER,
     created_date DATE DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY(sys_account_source_id) REFERENCES sys_account_source(sys_account_source_id),
-    UNIQUE(category_name, sys_account_source_id)
+    UNIQUE(category_name)
 );
 
 
@@ -158,6 +156,7 @@ CREATE TABLE sys_rules (
     rule_name VARCHAR(250) NOT NULL,
     rule_json TEXT NOT NULL,
     created_date DATE DEFAULT CURRENT_TIMESTAMP,
+    last_run DATE,
     sys_transaction_category_id INTEGER,
     sys_account_source_id INTEGER,
     FOREIGN KEY(sys_transaction_category_id) REFERENCES sys_transaction_category(sys_transaction_category_id),

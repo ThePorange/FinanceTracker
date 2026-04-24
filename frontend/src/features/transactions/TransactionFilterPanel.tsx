@@ -5,10 +5,11 @@ import { useSystemData } from '../admin/useSystemData';
 interface TransactionFilterPanelProps {
   filters: Record<string, any>;
   onFilterChange: (newFilters: Record<string, any>) => void;
+  defaultExpanded?: boolean;
 }
 
-export function TransactionFilterPanel({ filters, onFilterChange }: TransactionFilterPanelProps) {
-  const [isOpen, setIsOpen] = useState(false);
+export function TransactionFilterPanel({ filters, onFilterChange, defaultExpanded = false }: TransactionFilterPanelProps) {
+  const [isOpen, setIsOpen] = useState(defaultExpanded);
   const [localFilters, setLocalFilters] = useState<Record<string, any>>(filters);
   
   // Sync when filters are explicitly cleared or changed from the outside
@@ -81,23 +82,23 @@ export function TransactionFilterPanel({ filters, onFilterChange }: TransactionF
       </div>
 
       {isOpen && (
-        <div className="p-6 border-t border-gray-100 bg-gray-50/50 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="p-4 border-t border-gray-100 bg-gray-50/50 grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
           {/* Dates */}
-          <div>
+          <div className="md:col-span-2 lg:col-span-2">
             <label className="block text-sm font-medium text-gray-700 mb-1">Date Range</label>
             <div className="flex gap-2">
               <input 
                 type="date" 
                 value={localFilters.startDate || ''} 
                 onChange={e => handleUpdate('startDate', e.target.value)}
-                className="w-full bg-white border border-gray-200 rounded-lg px-2 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                className="w-full bg-white border border-gray-200 rounded-lg px-2 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 min-w-0"
               />
               <span className="text-gray-400 self-center">to</span>
               <input 
                 type="date" 
                 value={localFilters.endDate || ''} 
                 onChange={e => handleUpdate('endDate', e.target.value)}
-                className="w-full bg-white border border-gray-200 rounded-lg px-2 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                className="w-full bg-white border border-gray-200 rounded-lg px-2 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 min-w-0"
               />
             </div>
           </div>

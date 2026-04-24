@@ -61,7 +61,7 @@ export function useUpdateSourceMappings() {
 export function useDuplicateSource() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ id, newName }: { id: number, newName: string }) => {
+    mutationFn: async ({ id, newName, config }: { id: number, newName: string, config?: any }) => {
       const mappingsRes = await api.getSourceMappings(id);
       const mappingsArr = mappingsRes.data || mappingsRes || [];
       const stagingTableName = `staging_${newName.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
@@ -79,10 +79,21 @@ export function useDuplicateSource() {
 
       return api.setupSource({
         name: newName,
-        config: {},
+        config: config || {},
         mappings: payloadMappings
       });
     },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['sources'] });
+      queryClient.invalidateQueries({ queryKey: ['meta'] });
+    },
+  });
+}
+
+export function useDeleteSource() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => api.deleteSource(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['sources'] });
       queryClient.invalidateQueries({ queryKey: ['meta'] });

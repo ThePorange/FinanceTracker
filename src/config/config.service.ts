@@ -74,8 +74,15 @@ export class ConfigService {
   create(table: string, data: Record<string, any>) {
     this.validateTable(table);
     const db = this.dbService.getDb();
-    const keys = Object.keys(data);
-    const values = Object.values(data);
+    
+    // Strip undefined values
+    const cleanData = Object.entries(data).reduce((acc, [k, v]) => {
+      if (v !== undefined) acc[k] = v;
+      return acc;
+    }, {} as Record<string, any>);
+
+    const keys = Object.keys(cleanData);
+    const values = Object.values(cleanData);
     
     const placeholders = keys.map(() => '?').join(', ');
     const sql = `INSERT INTO ${table} (${keys.join(', ')}) VALUES (${placeholders})`;

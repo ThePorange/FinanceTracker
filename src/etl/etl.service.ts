@@ -84,7 +84,7 @@ export class EtlService {
     let recordsCount = 0;
     
     try {
-      const records = parse(fileBuffer, { columns: true, skip_empty_lines: true }) as Record<string, string>[];
+      const records = parse(fileBuffer, { columns: true, skip_empty_lines: true, bom: true }) as Record<string, string>[];
       recordsCount = records.length;
       if (!records.length) throw new BadRequestException('Empty recordset');
 
@@ -329,9 +329,9 @@ export class EtlService {
         const txnId = res.lastInsertRowid;
 
         if (categoryName) {
-           let cat = db.prepare('SELECT sys_transaction_category_id FROM sys_transaction_category WHERE category_name = ? AND sys_account_source_id = ?').get(categoryName, accountId) as any;
+           let cat = db.prepare('SELECT sys_transaction_category_id FROM sys_transaction_category WHERE category_name = ?').get(categoryName) as any;
            if (!cat) {
-             const cr = db.prepare('INSERT INTO sys_transaction_category (category_name, sys_account_source_id) VALUES (?, ?)').run(categoryName, accountId);
+             const cr = db.prepare('INSERT INTO sys_transaction_category (category_name) VALUES (?)').run(categoryName);
              cat = { sys_transaction_category_id: cr.lastInsertRowid };
            }
            db.prepare('INSERT INTO sys_transaction_category_map (sys_transaction_id, sys_transaction_category_id, is_auto, confidence) VALUES (?, ?, 1, 1.0)').run(txnId, cat.sys_transaction_category_id);
