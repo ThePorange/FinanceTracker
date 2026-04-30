@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useSystemData } from './useSystemData';
 import { Input } from '../../components/shared/Input';
-import { Play, Plus, Trash2, Save, FileJson, ListChecks } from 'lucide-react';
+import { Play, Plus, Trash2, Save, FileJson, ListChecks, Download } from 'lucide-react';
 import { api } from '../../services/api';
 import { TransactionSelectorModal } from './TransactionSelectorModal';
 
@@ -15,10 +15,12 @@ type RuleCondition = {
   min?: number;
   max?: number;
   checksums?: string[];
+  operator?: 'LIKE' | 'NOT LIKE';
 };
 
 type RuleGroup = {
   id: string;
+  sourceId?: number | '';
   conditions: RuleCondition[];
 };
 
@@ -35,7 +37,6 @@ export function RulesScreen() {
   
   // Form State
   const [ruleName, setRuleName] = useState('');
-  const [sourceId, setSourceId] = useState<number | ''>('');
   const [categoryInput, setCategoryInput] = useState('');
   const [groups, setGroups] = useState<RuleGroup[]>([]);
   const [lastRun, setLastRun] = useState<string | null>(null);
@@ -50,7 +51,6 @@ export function RulesScreen() {
   const handleSelectRule = (r: any) => {
     setSelectedRuleId(r.sys_rules_id);
     setRuleName(r.rule_name || '');
-    setSourceId(r.sys_account_source_id || '');
     const cat = categories.find((c: any) => c.sys_transaction_category_id === r.sys_transaction_category_id);
     setCategoryInput(cat ? cat.category_name : '');
     setLastRun(r.last_run || null);
@@ -63,18 +63,53 @@ export function RulesScreen() {
     let loadedGroups: RuleGroup[] = [];
 
     if (parsed) {
-       if (parsed.type === 'and' && parsed.conditions) {
-          loadedGroups = parsed.conditions.map((c: any) => {
-             if (c.type === 'or' && c.conditions) {
-                return { id: Math.random().toString(), conditions: c.conditions.map((cc: any) => ({...cc, id: Math.random().toString()})) };
+       function parseBlock(node: any): RuleGroup {
+          let sourceId: number | '' = '';
+          let uiConditions: any[] = [];
+
+          if (node.type === 'and' && node.conditions) {
+             const sourceNode = node.conditions.find((c: any) => c.type === 'source');
+             if (sourceNode) {
+                sourceId = sourceNode.value;
+                const otherNodes = node.conditions.filter((c: any) => c.type !== 'source');
+                if (otherNodes.length === 1) {
+                   const child = otherNodes[0];
+                   if (child.type === 'or' && child.conditions) {
+                      uiConditions = child.conditions;
+                   } else {
+                      uiConditions = [child];
+                   }
+                } else {
+                   uiConditions = otherNodes;
+                }
              } else {
-                return { id: Math.random().toString(), conditions: [{...c, id: Math.random().toString()}] };
+                uiConditions = [node];
              }
-          });
-       } else if (parsed.type === 'or' && parsed.conditions) {
-          loadedGroups = [{ id: Math.random().toString(), conditions: parsed.conditions.map((cc: any) => ({...cc, id: Math.random().toString()})) }];
+          } else if (node.type === 'or' && node.conditions) {
+             uiConditions = node.conditions;
+          } else {
+             uiConditions = [node];
+          }
+
+          uiConditions = uiConditions.map(c => ({...c, id: Math.random().toString()}));
+          return { id: Math.random().toString(), sourceId, conditions: uiConditions };
+       }
+
+       if (parsed.type === 'and' && parsed.conditions) {
+          const hasSource = parsed.conditions.some((c: any) => c.type === 'source');
+          if (hasSource) {
+             loadedGroups = [parseBlock(parsed)];
+          } else {
+             loadedGroups = parsed.conditions.map((c: any) => parseBlock(c));
+          }
        } else {
-          loadedGroups = [{ id: Math.random().toString(), conditions: [{...parsed, id: Math.random().toString()}] }];
+          loadedGroups = [parseBlock(parsed)];
+       }
+
+       if (r.sys_account_source_id) {
+          loadedGroups.forEach(g => {
+             if (!g.sourceId) g.sourceId = r.sys_account_source_id;
+          });
        }
     }
     setGroups(loadedGroups);
@@ -83,14 +118,14 @@ export function RulesScreen() {
   const handleCreateNew = () => {
     setSelectedRuleId(null);
     setRuleName('');
-    setSourceId('');
     setCategoryInput('');
     setLastRun(null);
-    setGroups([{ id: Math.random().toString(), conditions: [{ id: Math.random().toString(), type: 'contains', field: 'description', value: '' }] }]);
+    setGroups([{ id: Math.random().toString(), sourceId: '', conditions: [{ id: Math.random().toString(), type: 'contains', field: 'description', value: '' }] }]);
   };
 
   const addGroup = () => {
-    setGroups([...groups, { id: Math.random().toString(), conditions: [{ id: Math.random().toString(), type: 'contains', field: 'description', value: '' }] }]);
+    const lastSourceId = groups.length > 0 ? groups[groups.length - 1].sourceId : '';
+    setGroups([...groups, { id: Math.random().toString(), sourceId: lastSourceId, conditions: [{ id: Math.random().toString(), type: 'contains', field: 'description', value: '' }] }]);
   };
 
   const removeGroup = (gId: string) => {
@@ -155,32 +190,47 @@ export function RulesScreen() {
     
     // Build JSON securely preventing empty strings parsing natively
     const cleanGroups = groups.map(g => {
-       return g.conditions.map(c => {
+       const valid = g.conditions.filter(c => {
+          if (c.type === 'contains' || c.type === 'equals') return c.value && String(c.value).trim() !== '';
+          if (c.type === 'date_range') return c.start && c.end;
+          if (c.type === 'amount_range') return c.min !== undefined && c.max !== undefined;
+          if (c.type === 'select_transactions' || c.type === 'exclude_transactions') return true;
+          return false;
+       });
+       const conds = valid.map(c => {
           const { id, ...rest } = c;
           if (rest.type === 'date_range') rest.field = 'transaction_date';
           return rest;
        });
-    }).filter(gc => gc.length > 0);
+       if (conds.length === 0) return null;
+       
+       let blockJson: any;
+       if (conds.length === 1) {
+          blockJson = conds[0];
+       } else {
+          blockJson = { type: 'or', conditions: conds };
+       }
+
+       if (g.sourceId) {
+          return { type: 'and', conditions: [{ type: 'source', value: g.sourceId }, blockJson] };
+       }
+       return blockJson;
+    }).filter(gc => gc !== null);
 
     if (cleanGroups.length === 0) {
        setIsSaving(false);
        return alert('You must define at least one valid condition.');
     }
 
-    const mappedGroups = cleanGroups.map(groupConds => {
-       if (groupConds.length === 1) return groupConds[0];
-       return { type: 'or', conditions: groupConds };
-    });
-
-    if (mappedGroups.length === 1) {
-       finalJson = mappedGroups[0];
+    if (cleanGroups.length === 1) {
+       finalJson = cleanGroups[0];
     } else {
-       finalJson = { type: 'and', conditions: mappedGroups };
+       finalJson = { type: 'and', conditions: cleanGroups };
     }
 
     const payload = {
        rule_name: ruleName,
-       sys_account_source_id: sourceId || null,
+       sys_account_source_id: null,
        sys_transaction_category_id: finalCategoryId,
        rule_json: JSON.stringify(finalJson)
     };
@@ -241,6 +291,230 @@ export function RulesScreen() {
      }
   };
 
+   const getRuleSourceText = (rule: any) => {
+      let ruleSources = new Set<string>();
+      try {
+         const traverse = (node: any) => {
+            if (!node) return;
+            if (node.type === 'source') {
+               const sName = sources.find((s: any) => s.sys_account_source_id === node.value)?.account_source_name || 'Unknown';
+               ruleSources.add(sName);
+            }
+            if (node.conditions) node.conditions.forEach(traverse);
+         };
+         traverse(JSON.parse(rule.rule_json));
+      } catch (e) {}
+
+      if (ruleSources.size === 0) {
+         if (rule.sys_account_source_id) {
+            const sName = sources.find((s: any) => s.sys_account_source_id === rule.sys_account_source_id)?.account_source_name || 'Unknown';
+            return `Source: ${sName}`;
+         }
+         return 'Source: Global';
+      }
+      if (ruleSources.size === 1) return `Source: ${Array.from(ruleSources)[0]}`;
+      return 'Source: Various';
+   };
+
+   const enrichJsonWithSourceNames = (node: any): any => {
+      if (!node) return node;
+      const enriched = { ...node };
+      if (enriched.type === 'source') {
+         enriched.source_name = sourcesData?.data?.find((s: any) => s.sys_account_source_id === enriched.value)?.account_source_name || 'Unknown';
+      }
+      if (enriched.conditions && Array.isArray(enriched.conditions)) {
+         enriched.conditions = enriched.conditions.map(enrichJsonWithSourceNames);
+      }
+      return enriched;
+   };
+
+  const handleExportRule = async (r: any) => {
+     try {
+        const catName = categoriesData?.data?.find((c: any) => c.sys_transaction_category_id === r.sys_transaction_category_id)?.category_name;
+        const sourceName = sourcesData?.data?.find((s: any) => s.sys_account_source_id === r.sys_account_source_id)?.account_source_name;
+        
+        let ruleObj: any = {};
+        try {
+           ruleObj = JSON.parse(r.rule_json);
+        } catch(e) {}
+
+        // Collect all checksums from rule conditions, grouped by type
+        const includeChecksums = new Set<string>();
+        const excludeChecksums = new Set<string>();
+        
+        const traverse = (node: any) => {
+           if (!node) return;
+           if (node.type === 'select_transactions' && node.checksums) {
+              node.checksums.forEach((c: string) => includeChecksums.add(c));
+           } else if (node.type === 'exclude_transactions' && node.checksums) {
+              node.checksums.forEach((c: string) => excludeChecksums.add(c));
+           }
+           
+           if (node.conditions && Array.isArray(node.conditions)) {
+              node.conditions.forEach(traverse);
+           }
+        };
+        traverse(ruleObj);
+
+        let checksumMetadata: any = { included: [], excluded: [] };
+        const allUniqueChecksums = new Set([...Array.from(includeChecksums), ...Array.from(excludeChecksums)]);
+        
+        if (allUniqueChecksums.size > 0) {
+           const checksumList = Array.from(allUniqueChecksums).join(',');
+           const res = await fetch(`/api/transactions?limit=-1&checksums=${checksumList}`);
+           const json = await res.json();
+           
+           if (json && json.data) {
+              const txnMap = new Map();
+              json.data.forEach((t: any) => txnMap.set(t.row_checksum, t));
+              
+              includeChecksums.forEach(c => {
+                 const t = txnMap.get(c);
+                 if (t) checksumMetadata.included.push({ 
+                    date: t.date, 
+                    description: t.description, 
+                    amount: t.amount, 
+                    drcr: t.drcr,
+                    account: t.account,
+                    checksum: c
+                 });
+              });
+              
+              excludeChecksums.forEach(c => {
+                 const t = txnMap.get(c);
+                 if (t) checksumMetadata.excluded.push({ 
+                    date: t.date, 
+                    description: t.description, 
+                    amount: t.amount, 
+                    drcr: t.drcr,
+                    account: t.account,
+                    checksum: c
+                 });
+              });
+           }
+        }
+
+        const exportData: any = {
+           rule_name: r.rule_name,
+           rule_json: JSON.stringify(enrichJsonWithSourceNames(ruleObj)),
+           category_name: catName || null,
+           source_name: sourceName || null,
+           exported_at: new Date().toISOString()
+        };
+
+        if (checksumMetadata.included.length > 0 || checksumMetadata.excluded.length > 0) {
+           exportData.checksum_metadata = checksumMetadata;
+        }
+        
+        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(exportData, null, 2));
+        const downloadAnchorNode = document.createElement('a');
+        
+        const dateStr = new Date().toISOString().replace(/T/, '_').replace(/:/g, '').split('.')[0];
+        const safeRuleName = (r.rule_name || 'rule').replace(/[^a-z0-9]/gi, '_').toLowerCase();
+        
+        downloadAnchorNode.setAttribute("href", dataStr);
+        downloadAnchorNode.setAttribute("download", `${safeRuleName}_${dateStr}.json`);
+        document.body.appendChild(downloadAnchorNode);
+        downloadAnchorNode.click();
+        downloadAnchorNode.remove();
+     } catch (e: any) {
+        alert(`Failed to export rule: ${e.message}`);
+     }
+  };
+
+  const handleExportAllRules = async () => {
+     try {
+        const allRulesExport = [];
+        const allUniqueChecksums = new Set<string>();
+
+        for (const r of rules) {
+           const catName = categoriesData?.data?.find((c: any) => c.sys_transaction_category_id === r.sys_transaction_category_id)?.category_name;
+           const sourceName = sourcesData?.data?.find((s: any) => s.sys_account_source_id === r.sys_account_source_id)?.account_source_name;
+           
+           let ruleObj: any = {};
+           try {
+              ruleObj = JSON.parse(r.rule_json);
+           } catch(e) {}
+
+           const includeChecksums = new Set<string>();
+           const excludeChecksums = new Set<string>();
+           const traverse = (node: any) => {
+              if (!node) return;
+              if (node.type === 'select_transactions' && node.checksums) {
+                 node.checksums.forEach((c: string) => { includeChecksums.add(c); allUniqueChecksums.add(c); });
+              } else if (node.type === 'exclude_transactions' && node.checksums) {
+                 node.checksums.forEach((c: string) => { excludeChecksums.add(c); allUniqueChecksums.add(c); });
+              }
+              if (node.conditions && Array.isArray(node.conditions)) {
+                 node.conditions.forEach(traverse);
+              }
+           };
+           traverse(ruleObj);
+
+           allRulesExport.push({
+              r,
+              ruleObj,
+              includeChecksums,
+              excludeChecksums,
+              catName,
+              sourceName
+           });
+        }
+
+        const txnMap = new Map();
+        if (allUniqueChecksums.size > 0) {
+           const checksumList = Array.from(allUniqueChecksums).join(',');
+           const res = await fetch(`/api/transactions?limit=-1&checksums=${checksumList}`);
+           const json = await res.json();
+           if (json && json.data) {
+              json.data.forEach((t: any) => txnMap.set(t.row_checksum, t));
+           }
+        }
+
+        const finalExport = allRulesExport.map(({ r, ruleObj, includeChecksums, excludeChecksums, catName, sourceName }) => {
+           const checksumMetadata: any = { included: [], excluded: [] };
+           
+           includeChecksums.forEach(c => {
+              const t = txnMap.get(c);
+              if (t) checksumMetadata.included.push({ date: t.date, description: t.description, amount: t.amount, drcr: t.drcr, account: t.account, checksum: c });
+           });
+           
+           excludeChecksums.forEach(c => {
+              const t = txnMap.get(c);
+              if (t) checksumMetadata.excluded.push({ date: t.date, description: t.description, amount: t.amount, drcr: t.drcr, account: t.account, checksum: c });
+           });
+
+           const ruleData: any = {
+              rule_name: r.rule_name,
+              rule_json: JSON.stringify(enrichJsonWithSourceNames(ruleObj)),
+              category_name: catName || null,
+              source_name: sourceName || null
+           };
+           if (checksumMetadata.included.length > 0 || checksumMetadata.excluded.length > 0) {
+              ruleData.checksum_metadata = checksumMetadata;
+           }
+           return ruleData;
+        });
+
+        const exportContainer = {
+           rules: finalExport,
+           exported_at: new Date().toISOString(),
+           count: finalExport.length
+        };
+
+        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(exportContainer, null, 2));
+        const downloadAnchorNode = document.createElement('a');
+        const dateStr = new Date().toISOString().replace(/T/, '_').replace(/:/g, '').split('.')[0];
+        downloadAnchorNode.setAttribute("href", dataStr);
+        downloadAnchorNode.setAttribute("download", `all_rules_export_${dateStr}.json`);
+        document.body.appendChild(downloadAnchorNode);
+        downloadAnchorNode.click();
+        downloadAnchorNode.remove();
+     } catch (e: any) {
+        alert(`Failed to export rules: ${e.message}`);
+     }
+  };
+
   return (
     <div className="p-6 max-w-7xl mx-auto animate-in fade-in duration-500 flex flex-col h-[calc(100vh-64px)]">
       <div className="flex justify-between items-center mb-6">
@@ -249,6 +523,13 @@ export function RulesScreen() {
           <p className="text-gray-500 mt-1">Configure deterministic categorizations natively resolving pipelines securely.</p>
         </div>
         <div className="flex items-center gap-4">
+          <button 
+             onClick={handleExportAllRules}
+             className="flex items-center gap-2 bg-white border border-gray-200 text-gray-700 px-5 py-2.5 rounded-lg hover:bg-gray-50 transition shadow-sm font-medium"
+          >
+             <Download className="w-4 h-4 text-gray-400" />
+             Export All Rules
+          </button>
           <button 
              onClick={handleExecute}
              disabled={isExecuting}
@@ -270,16 +551,32 @@ export function RulesScreen() {
              </button>
           </div>
           <div className="flex-1 overflow-y-auto p-2 space-y-1">
-             {rules.map((r: any) => (
+             {rules.map((r: any, index: number) => (
                 <div 
                    key={r.sys_rules_id}
-                   className={`p-3 flex justify-between items-center rounded-lg border transition ${selectedRuleId === r.sys_rules_id ? 'border-blue-500 bg-blue-50 shadow-sm' : 'border-transparent hover:bg-gray-50'}`}
+                   className={`group relative p-3 flex justify-between items-center rounded-lg border transition ${selectedRuleId === r.sys_rules_id ? 'border-blue-500 bg-blue-50 shadow-sm' : 'border-transparent hover:bg-gray-50'}`}
                 >
                    <div className="cursor-pointer flex-1" onClick={() => handleSelectRule(r)}>
-                       <p className="font-medium text-gray-900 text-sm">{r.rule_name || 'Unnamed Rule'}</p>
-                       <p className="text-xs text-gray-500 mt-1 truncate">{r.sys_account_source_id ? 'Source-Specific' : 'Global'}</p>
+                       <p className="font-medium text-gray-900 text-sm group-hover:text-blue-700 transition">{r.rule_name || 'Unnamed Rule'}</p>
+                       <p className="text-xs text-gray-500 mt-1 truncate">{getRuleSourceText(r)}</p>
                    </div>
-                   <div className="flex items-center gap-1">
+                   
+                   {/* Tooltip Popup */}
+                   <div className={`absolute hidden group-hover:block ${index < 2 ? 'top-full mt-2' : 'bottom-full mb-2'} left-1/2 -translate-x-1/2 w-48 bg-gray-900 text-white text-xs rounded-lg p-3 z-20 shadow-xl whitespace-nowrap pointer-events-none`}>
+                       <p className="font-semibold text-gray-300 mb-1 border-b border-gray-700 pb-1">Execution Stats</p>
+                       <p><span className="text-gray-400">Last Run:</span> {r.last_run ? new Date(r.last_run + 'Z').toLocaleString() : 'Never'}</p>
+                       <p><span className="text-gray-400">Records Affected:</span> {r.last_run_count ?? 0}</p>
+                       <div className={`absolute ${index < 2 ? 'bottom-full border-b-gray-900' : 'top-full border-t-gray-900'} left-1/2 -translate-x-1/2 border-4 border-transparent`}></div>
+                   </div>
+
+                   <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition duration-200">
+                      <button 
+                          onClick={(e) => { e.stopPropagation(); handleExportRule(r); }}
+                          title="Export Rule"
+                          className="text-gray-400 hover:text-blue-600 transition p-1.5 rounded-full hover:bg-blue-50"
+                      >
+                          <Download className="w-3.5 h-3.5" />
+                      </button>
                       <button 
                           onClick={(e) => { e.stopPropagation(); handleExecuteSingleRule(r.sys_rules_id); }}
                           title="Run this rule only"
@@ -333,17 +630,6 @@ export function RulesScreen() {
                              {categories.map((c: any) => <option key={c.sys_transaction_category_id} value={c.category_name} />)}
                           </datalist>
                        </div>
-                       <div className="flex-1">
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Scoped Source (Optional)</label>
-                          <select 
-                             value={sourceId} 
-                             onChange={e => setSourceId(Number(e.target.value))}
-                             className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
-                          >
-                             <option value="">Global (All Sources)</option>
-                             {sources.map((s: any) => <option key={s.sys_account_source_id} value={s.sys_account_source_id}>{s.account_source_name}</option>)}
-                          </select>
-                       </div>
                     </div>
                  </div>
 
@@ -363,7 +649,20 @@ export function RulesScreen() {
                              
                              <div className="flex justify-between items-center mb-3">
                                 <span className="text-xs font-bold text-gray-500 uppercase tracking-widest">Block {gIndex + 1} (Match ANY of these)</span>
-                                <button onClick={() => removeGroup(group.id)} className="text-gray-400 hover:text-red-500 transition"><Trash2 className="w-4 h-4"/></button>
+                                <div className="flex items-center gap-3">
+                                   <select 
+                                      value={group.sourceId || ''} 
+                                      onChange={e => {
+                                         const newSourceId = e.target.value ? parseInt(e.target.value) : '';
+                                         setGroups(groups.map(g => g.id === group.id ? { ...g, sourceId: newSourceId } : g));
+                                      }}
+                                      className="bg-white border border-gray-200 text-gray-700 rounded-lg px-2 py-1.5 text-xs font-medium focus:ring-2 focus:ring-blue-500 shadow-sm"
+                                   >
+                                      <option value="">Global (All Sources)</option>
+                                      {sources.map((s: any) => <option key={s.sys_account_source_id} value={s.sys_account_source_id}>{s.account_source_name}</option>)}
+                                   </select>
+                                   <button onClick={() => removeGroup(group.id)} className="text-gray-400 hover:text-red-500 transition"><Trash2 className="w-4 h-4"/></button>
+                                </div>
                              </div>
                              
                              <div className="space-y-3 pl-4 border-l-2 border-blue-200">
@@ -377,13 +676,24 @@ export function RulesScreen() {
                                             onChange={e => updateCondition(group.id, cond.id, { type: e.target.value as any })}
                                             className="w-36 bg-white border border-gray-200 rounded-lg px-2 py-2 text-sm focus:ring-2 focus:ring-blue-500"
                                          >
-                                            <option value="contains">Text Contains</option>
+                                            <option value="contains">Text</option>
                                             <option value="equals">Exact Match</option>
                                             <option value="amount_range">Amount Range</option>
                                             <option value="date_range">Date Range</option>
                                             <option value="select_transactions">Select Transactions</option>
                                             <option value="exclude_transactions">Exclude Transactions</option>
                                          </select>
+                                         
+                                         {cond.type === 'contains' && (
+                                            <select
+                                               value={cond.operator || 'LIKE'}
+                                               onChange={e => updateCondition(group.id, cond.id, { operator: e.target.value as any })}
+                                               className="w-28 bg-white border border-gray-200 rounded-lg px-2 py-2 text-sm focus:ring-2 focus:ring-blue-500"
+                                            >
+                                               <option value="LIKE">LIKE</option>
+                                               <option value="NOT LIKE">NOT LIKE</option>
+                                            </select>
+                                         )}
                                          
                                          {cond.type !== 'date_range' && cond.type !== 'select_transactions' && cond.type !== 'exclude_transactions' && (
                                             <select 

@@ -7,6 +7,7 @@ import { TransactionDetailPanel } from './TransactionDetailPanel';
 import { Input } from '../../components/shared/Input';
 import { ChevronLeft, ChevronRight, Download, ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react';
 import { TransactionFilterPanel } from './TransactionFilterPanel';
+import { useSystemData } from '../admin/useSystemData';
 
 const PAGE_SIZE = 50;
 
@@ -76,12 +77,50 @@ export function TransactionsScreen() {
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const paginated = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
 
+  const { data: sourcesData } = useSystemData('sys_account_source');
+  const { data: groupsData } = useSystemData('sys_account_group');
+  const { data: typesData } = useSystemData('sys_transaction_type');
+  const { data: rulesData } = useSystemData('sys_rules');
+
+  const sources = sourcesData?.data || sourcesData || [];
+  const groups = groupsData?.data || groupsData || [];
+  const types = typesData?.data || typesData || [];
+  const rules = rulesData?.data || rulesData || [];
+
   useEffect(() => {
     setCurrentPage(1);
   }, [search, sortKey, sortDir]);
 
   const exportToCsv = () => {
     if (!filtered || filtered.length === 0) return;
+
+    const filterInfo = [];
+    if (filters.startDate) filterInfo.push(`Start Date,${filters.startDate}`);
+    if (filters.endDate) filterInfo.push(`End Date,${filters.endDate}`);
+    
+    if (filters.sourceId) {
+      const s = sources.find((x: any) => x.sys_account_source_id.toString() === filters.sourceId.toString());
+      filterInfo.push(`Account Source,${s ? s.account_source_name : filters.sourceId}`);
+    }
+    if (filters.groupId) {
+      const g = groups.find((x: any) => x.sys_account_group_id.toString() === filters.groupId.toString());
+      filterInfo.push(`Account Group,${g ? g.account_group_name : filters.groupId}`);
+    }
+    if (filters.category) filterInfo.push(`Category Lookup,${filters.category}`);
+    if (filters.typeId) {
+      const t = types.find((x: any) => x.sys_transaction_type_id.toString() === filters.typeId.toString());
+      filterInfo.push(`Transaction Type,${t ? t.transaction_type : filters.typeId}`);
+    }
+    if (filters.ruleId) {
+      const r = rules.find((x: any) => x.sys_rules_id.toString() === filters.ruleId.toString());
+      filterInfo.push(`Applied Rule,${r ? r.rule_name : filters.ruleId}`);
+    }
+    if (filters.drcr) filterInfo.push(`Debit/Credit,${filters.drcr === 'DR' ? 'Debits' : 'Credits'}`);
+    if (filters.amountVal) filterInfo.push(`Amount,${filters.amountOp || '='}${filters.amountVal}`);
+    if (search) filterInfo.push(`Search,${search}`);
+    
+    if (filterInfo.length === 0) filterInfo.push("Filters,None");
+
     const headers = ['Posting Date', 'Transaction Date', 'Description', 'Amount', 'DR/CR', 'Account', 'Auto Category', 'User Category', 'Type'];
     const rows = filtered.map(t => [
        t.posting_date ? new Date(t.posting_date).toLocaleDateString() : '-',
@@ -94,13 +133,22 @@ export function TransactionsScreen() {
        `"${(t.userCategory || '').replace(/"/g, '""')}"`,
        `"${(t.transaction_type || '').replace(/"/g, '""')}"`
     ]);
-    const csvStr = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+
+    const csvStr = [
+      ...filterInfo,
+      '',
+      '',
+      headers.join(','), 
+      ...rows.map(r => r.join(','))
+    ].join('\n');
+
     const blob = new Blob([csvStr], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
     a.download = `transactions_export_${new Date().toISOString().split('T')[0]}.csv`;
     a.click();
+    URL.revokeObjectURL(url);
   };
 
   if (error) {
@@ -145,11 +193,11 @@ export function TransactionsScreen() {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
          <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm flex flex-col">
             <span className="text-sm font-medium text-gray-500">Total Credits (Inflow)</span>
-            <span className="text-3xl font-bold text-green-600">${totalCR.toFixed(2)}</span>
+            <span className="text-3xl font-bold text-green-600">${Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(totalCR)}</span>
          </div>
          <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm flex flex-col">
             <span className="text-sm font-medium text-gray-500">Total Debits (Outflow)</span>
-            <span className="text-3xl font-bold text-rose-600">${totalDR.toFixed(2)}</span>
+            <span className="text-3xl font-bold text-rose-600">${Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(totalDR)}</span>
          </div>
       </div>
       
@@ -176,7 +224,7 @@ export function TransactionsScreen() {
             <td className="px-4 py-4 text-gray-600 group-hover:text-gray-900 whitespace-nowrap">{txn.posting_date ? new Date(txn.posting_date).toLocaleDateString() : '-'}</td>
             <td className="px-4 py-4 text-gray-600 group-hover:text-gray-900 whitespace-nowrap">{txn.transaction_date ? new Date(txn.transaction_date).toLocaleDateString() : '-'}</td>
             <td className="px-4 py-4 font-medium text-gray-800">{txn.description}</td>
-            <td className="px-4 py-4 font-medium text-gray-900 whitespace-nowrap">${txn.amount?.toFixed(2) || '0.00'}</td>
+            <td className="px-4 py-4 font-medium text-gray-900 whitespace-nowrap">${txn.amount != null ? Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(txn.amount) : '0.00'}</td>
             <td className="px-4 py-4 text-gray-600 font-bold">{txn.drcr || '-'}</td>
             <td className="px-4 py-4 text-gray-500">{txn.account}</td>
             <td className="px-4 py-4">

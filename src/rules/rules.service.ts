@@ -23,7 +23,7 @@ export class RulesService {
 
     if (rules.length > 0) {
        const ruleIds = rules.map(r => r.sys_rules_id).join(',');
-       db.prepare(`UPDATE sys_rules SET last_run = CURRENT_TIMESTAMP WHERE sys_rules_id IN (${ruleIds})`).run();
+       db.prepare(`UPDATE sys_rules SET last_run = CURRENT_TIMESTAMP, last_run_count = 0 WHERE sys_rules_id IN (${ruleIds})`).run();
     }
 
     let executionCount = 0;
@@ -65,6 +65,7 @@ export class RulesService {
              }
           });
           insertMany(matches);
+          db.prepare('UPDATE sys_rules SET last_run_count = ? WHERE sys_rules_id = ?').run(matches.length, rule.sys_rules_id);
           executionCount += matches.length;
        }
     }
@@ -80,9 +81,14 @@ export class RulesService {
   }
 
   private buildRuleCondition(json: any): { where: string, params: any[], confidence: number } {
+     if (json.type === 'source') {
+         if (!json.value) return { where: '', params: [], confidence: 0 };
+         return { where: `sys_account_source_id = ?`, params: [json.value], confidence: 0.95 };
+     }
      if (json.type === 'contains') {
          if (!json.value || String(json.value).trim() === '') return { where: '', params: [], confidence: 0 };
-         return { where: `LOWER(${json.field}) LIKE LOWER(?)`, params: [`%${json.value}%`], confidence: 0.85 };
+         const op = json.operator === 'NOT LIKE' ? 'NOT LIKE' : 'LIKE';
+         return { where: `LOWER(${json.field}) ${op} LOWER(?)`, params: [`%${json.value}%`], confidence: 0.85 };
      }
      if (json.type === 'equals') {
          if (!json.value || String(json.value).trim() === '') return { where: '', params: [], confidence: 0 };

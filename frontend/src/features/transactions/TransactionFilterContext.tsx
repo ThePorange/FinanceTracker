@@ -11,7 +11,10 @@ interface TransactionFilterContextType {
 const TransactionFilterContext = createContext<TransactionFilterContextType | undefined>(undefined);
 
 export function TransactionFilterProvider({ children }: { children: ReactNode }) {
-  const [filters, setFilters] = useState<Record<string, any>>({});
+  const currentYear = new Date().getFullYear();
+  const [filters, setFilters] = useState<Record<string, any>>({
+    startDate: `${currentYear}-01-01`
+  });
   const [search, setSearch] = useState('');
 
   return (

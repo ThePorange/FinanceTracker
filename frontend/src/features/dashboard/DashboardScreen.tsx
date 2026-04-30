@@ -76,7 +76,7 @@ export function DashboardScreen() {
       return { month, ...yoyMap[month] };
     });
     
-    const availableYears = Array.from(yearsSet).sort();
+    const availableYears = Array.from(yearsSet).sort().reverse();
 
     const ytdSums: Record<string, number> = {};
     const ytdTrend = monthNames.map(month => {
@@ -121,11 +121,11 @@ export function DashboardScreen() {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
          <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm flex flex-col">
             <span className="text-sm font-medium text-gray-500">Total Credits (Inflow)</span>
-            <span className="text-3xl font-bold text-green-600">${totalCR.toFixed(2)}</span>
+            <span className="text-3xl font-bold text-green-600">${Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(totalCR)}</span>
          </div>
          <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm flex flex-col">
             <span className="text-sm font-medium text-gray-500">Total Debits (Outflow)</span>
-            <span className="text-3xl font-bold text-rose-600">${totalDR.toFixed(2)}</span>
+            <span className="text-3xl font-bold text-rose-600">${Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(totalDR)}</span>
          </div>
       </div>
 
@@ -137,11 +137,11 @@ export function DashboardScreen() {
               <BarChart data={categorySpend} margin={{ top: 10, right: 10, left: 0, bottom: 20 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                 <XAxis dataKey="name" fontSize={12} tickLine={false} axisLine={false} dy={10} />
-                <YAxis fontSize={12} tickLine={false} axisLine={false} tickFormatter={(v) => `$${v}`} dx={-10} />
+                <YAxis fontSize={12} tickLine={false} axisLine={false} tickFormatter={(v) => `$${Intl.NumberFormat('en-US').format(v)}`} dx={-10} />
                 <Tooltip 
                   cursor={{ fill: '#f8fafc' }} 
                   contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                  formatter={(v: any, name: any) => [`$${Number(v).toFixed(2)}`, name]} 
+                  formatter={(v: any, name: any) => [`$${Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(v))}`, name]} 
                 />
                 <Legend iconType="circle" wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }} />
                 <Bar dataKey="dr" name="Debits" fill="#e11d48" radius={[4, 4, 0, 0]} maxBarSize={40} />
@@ -158,10 +158,10 @@ export function DashboardScreen() {
               <LineChart data={monthlyTrend} margin={{ top: 10, right: 10, left: 0, bottom: 20 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                 <XAxis dataKey="month" fontSize={12} tickLine={false} axisLine={false} dy={10} />
-                <YAxis fontSize={12} tickLine={false} axisLine={false} tickFormatter={(v) => `$${v}`} dx={-10} />
+                <YAxis fontSize={12} tickLine={false} axisLine={false} tickFormatter={(v) => `$${Intl.NumberFormat('en-US').format(v)}`} dx={-10} />
                 <Tooltip 
                   contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                  formatter={(v: any, name: any) => [`$${Number(v).toFixed(2)}`, name]} 
+                  formatter={(v: any, name: any) => [`$${Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(v))}`, name]} 
                 />
                 <Legend iconType="circle" wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }} />
                 <Line name="Debits" type="monotone" dataKey="dr" stroke="#e11d48" strokeWidth={3} dot={{ r: 4, strokeWidth: 2 }} activeDot={{ r: 6, strokeWidth: 0 }} />
@@ -178,10 +178,11 @@ export function DashboardScreen() {
               <LineChart data={yoyTrend} margin={{ top: 10, right: 10, left: 0, bottom: 20 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                 <XAxis dataKey="month" fontSize={12} tickLine={false} axisLine={false} dy={10} />
-                <YAxis fontSize={12} tickLine={false} axisLine={false} tickFormatter={(v) => `$${v}`} dx={-10} />
+                <YAxis fontSize={12} tickLine={false} axisLine={false} tickFormatter={(v) => `$${Intl.NumberFormat('en-US').format(v)}`} dx={-10} />
                 <Tooltip 
+                  itemSorter={(item) => -Number(item.name)}
                   contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                  formatter={(v: any, name: any) => [`$${Number(v).toFixed(2)}`, name]} 
+                  formatter={(v: any, name: any) => [`$${Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(v))}`, name]} 
                 />
                 <Legend iconType="circle" wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }} />
                 {availableYears.map((year, idx) => (
@@ -208,10 +209,11 @@ export function DashboardScreen() {
               <LineChart data={ytdTrend} margin={{ top: 10, right: 10, left: 0, bottom: 20 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                 <XAxis dataKey="month" fontSize={12} tickLine={false} axisLine={false} dy={10} />
-                <YAxis fontSize={12} tickLine={false} axisLine={false} tickFormatter={(v) => `$${v}`} dx={-10} />
+                <YAxis fontSize={12} tickLine={false} axisLine={false} tickFormatter={(v) => `$${Intl.NumberFormat('en-US').format(v)}`} dx={-10} />
                 <Tooltip 
+                  itemSorter={(item) => -Number(item.name)}
                   contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                  formatter={(v: any, name: any) => [`$${Number(v).toFixed(2)}`, name]} 
+                  formatter={(v: any, name: any) => [`$${Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(v))}`, name]} 
                 />
                 <Legend iconType="circle" wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }} />
                 {availableYears.map((year, idx) => (

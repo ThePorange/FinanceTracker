@@ -157,6 +157,7 @@ CREATE TABLE sys_rules (
     rule_json TEXT NOT NULL,
     created_date DATE DEFAULT CURRENT_TIMESTAMP,
     last_run DATE,
+    last_run_count INTEGER DEFAULT 0,
     sys_transaction_category_id INTEGER,
     sys_account_source_id INTEGER,
     FOREIGN KEY(sys_transaction_category_id) REFERENCES sys_transaction_category(sys_transaction_category_id),
