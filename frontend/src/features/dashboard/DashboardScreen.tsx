@@ -4,6 +4,7 @@ import { useTransactionFilters } from '../transactions/TransactionFilterContext'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line, CartesianGrid, Legend } from 'recharts';
 import { TransactionFilterPanel } from '../transactions/TransactionFilterPanel';
 import { Input } from '../../components/shared/Input';
+import { parseLocalDate } from '../../utils/dateUtils';
 
 export function DashboardScreen() {
   const { filters, setFilters, search, setSearch } = useTransactionFilters();
@@ -37,7 +38,7 @@ export function DashboardScreen() {
       const cat = t.userCategory || t.autoCategory || 'Uncategorized';
       const amt = Math.abs(t.amount || 0);
 
-      const date = new Date(t.date || t.transaction_date || t.posting_date || new Date());
+      const date = parseLocalDate(t.date || t.transaction_date || t.posting_date) || new Date();
       const year = String(date.getFullYear());
       const monthIdx = date.getMonth();
       const monthName = monthNames[monthIdx];
@@ -58,9 +59,10 @@ export function DashboardScreen() {
         monthMap[monthStr].dr += amt;
       }
 
-      // Track absolute volume of whatever is currently filtered for YoY chart
+      // Track net flow of whatever is currently filtered for YoY and YTD charts
+      const netAmt = t.drcr === 'CR' ? amt : -amt;
       if (!yoyMap[monthName][year]) yoyMap[monthName][year] = 0;
-      yoyMap[monthName][year] += amt;
+      yoyMap[monthName][year] += netAmt;
     });
 
     const categorySpend = Object.entries(catMap)
@@ -72,11 +74,15 @@ export function DashboardScreen() {
       .map(([month, vals]) => ({ month, dr: vals.dr, cr: vals.cr }))
       .sort((a, b) => a.month.localeCompare(b.month));
 
-    const yoyTrend = monthNames.map(month => {
-      return { month, ...yoyMap[month] };
-    });
-    
     const availableYears = Array.from(yearsSet).sort().reverse();
+
+    const yoyTrend = monthNames.map(month => {
+      const point: any = { month };
+      availableYears.forEach(year => {
+        point[year] = Math.abs(yoyMap[month][year] || 0);
+      });
+      return point;
+    });
 
     const ytdSums: Record<string, number> = {};
     const ytdTrend = monthNames.map(month => {
@@ -84,7 +90,7 @@ export function DashboardScreen() {
       availableYears.forEach(year => {
         if (!ytdSums[year]) ytdSums[year] = 0;
         ytdSums[year] += (yoyMap[month][year] || 0);
-        point[year] = ytdSums[year];
+        point[year] = Math.abs(ytdSums[year]);
       });
       return point;
     });
@@ -118,7 +124,7 @@ export function DashboardScreen() {
       />
 
       {/* KPI Summary */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
          <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm flex flex-col">
             <span className="text-sm font-medium text-gray-500">Total Credits (Inflow)</span>
             <span className="text-3xl font-bold text-green-600">${Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(totalCR)}</span>
@@ -126,6 +132,12 @@ export function DashboardScreen() {
          <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm flex flex-col">
             <span className="text-sm font-medium text-gray-500">Total Debits (Outflow)</span>
             <span className="text-3xl font-bold text-rose-600">${Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(totalDR)}</span>
+         </div>
+         <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm flex flex-col">
+            <span className="text-sm font-medium text-gray-500">Net Total</span>
+            <span className={`text-3xl font-bold ${totalCR - totalDR >= 0 ? 'text-indigo-600' : 'text-amber-600'}`}>
+               ${Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(totalCR - totalDR)}
+            </span>
          </div>
       </div>
 
@@ -172,7 +184,7 @@ export function DashboardScreen() {
         </div>
 
         <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm transition-all hover:shadow-md lg:col-span-2">
-          <h2 className="text-lg font-bold text-gray-800 mb-6 flex items-center gap-2">Year-over-Year (Total Volume)</h2>
+          <h2 className="text-lg font-bold text-gray-800 mb-6 flex items-center gap-2">Year-over-Year (Net Flow)</h2>
           <div className="h-80">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={yoyTrend} margin={{ top: 10, right: 10, left: 0, bottom: 20 }}>
@@ -203,7 +215,7 @@ export function DashboardScreen() {
         </div>
 
         <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm transition-all hover:shadow-md lg:col-span-2">
-          <h2 className="text-lg font-bold text-gray-800 mb-6 flex items-center gap-2">Year-to-Date (Cumulative Volume)</h2>
+          <h2 className="text-lg font-bold text-gray-800 mb-6 flex items-center gap-2">Year-to-Date (Cumulative Net)</h2>
           <div className="h-80">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={ytdTrend} margin={{ top: 10, right: 10, left: 0, bottom: 20 }}>

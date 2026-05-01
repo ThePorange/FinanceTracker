@@ -4,6 +4,7 @@ import type { Transaction } from '../../types';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../services/api';
 import { Input } from '../../components/shared/Input';
+import { formatLocalDate } from '../../utils/dateUtils';
 
 interface Props {
   transaction: Transaction | null;
@@ -44,7 +45,7 @@ export function TransactionDetailPanel({ transaction, onClose }: Props) {
           <div className="grid grid-cols-2 gap-y-6 gap-x-4">
             <div>
               <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">Date</p>
-              <p className="font-medium text-gray-900">{new Date(transaction.date).toLocaleDateString()}</p>
+              <p className="font-medium text-gray-900">{formatLocalDate(transaction.date)}</p>
             </div>
             <div>
               <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">Amount</p>

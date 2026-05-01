@@ -21,6 +21,8 @@ export class ConfigController {
       sys_staging_fields: dtos.CreateSysStagingFieldsDto,
       sys_account_group: dtos.CreateSysAccountGroupDto,
       sys_account_group_map: dtos.CreateSysAccountGroupMapDto,
+      sys_rule_group: dtos.CreateSysRuleGroupDto,
+      sys_rule_group_map: dtos.CreateSysRuleGroupMapDto,
     };
     const DtoClass = dtoMap[table];
     if (!DtoClass) throw new BadRequestException(`No DTO schema for table ${table}`);

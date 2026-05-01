@@ -63,3 +63,13 @@ export class CreateSysAccountGroupMapDto {
   @IsInt() sys_account_group_id!: number;
   @IsInt() sys_account_source_id!: number;
 }
+
+export class CreateSysRuleGroupDto {
+  @IsString() rule_group_name!: string;
+}
+
+export class CreateSysRuleGroupMapDto {
+  @IsInt() sys_rule_group_id!: number;
+  @IsInt() sys_rule_id!: number;
+  @IsOptional() @IsInt() exclude_rules?: number;
+}

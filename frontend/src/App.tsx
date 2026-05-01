@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, NavLink, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { LayoutDashboard, Receipt, Tags, Network, Wallet, Database, Activity, ShieldAlert, UploadCloud, TableProperties, LayoutTemplate, BookMarked } from 'lucide-react';
+import { LayoutDashboard, Receipt, Tags, Network, Wallet, Database, Activity, ShieldAlert, UploadCloud, TableProperties, LayoutTemplate, BookMarked, FolderGit2 } from 'lucide-react';
 import { TransactionsScreen } from './features/transactions/TransactionsScreen';
 import { CategoryManagementScreen } from './features/categories/CategoryManagementScreen';
 import { MappingRulesScreen } from './features/mappings/MappingRulesScreen';
@@ -13,6 +13,7 @@ import { DataImportScreen } from './features/admin/DataImportScreen';
 import { StagingDataScreen } from './features/admin/StagingDataScreen';
 import { AccountGroupsScreen } from './features/admin/AccountGroupsScreen';
 import { RulesScreen } from './features/admin/RulesScreen';
+import { RuleGroupsScreen } from './features/admin/RuleGroupsScreen';
 import { TransactionFilterProvider } from './features/transactions/TransactionFilterContext';
 
 const queryClient = new QueryClient({
@@ -33,6 +34,7 @@ function Sidebar({ isAdminMode, setIsAdminMode }: { isAdminMode: boolean, setIsA
     { to: '/admin/import', icon: <UploadCloud size={20} />, label: 'Data Import' },
     { to: '/admin/sources', icon: <Database size={20} />, label: 'Data Sources (Wizard)' },
     { to: '/admin/groups', icon: <Network size={20} />, label: 'Account Groups' },
+    { to: '/admin/rule-groups', icon: <FolderGit2 size={20} />, label: 'Rule Groups' },
     { to: '/admin/staging', icon: <LayoutTemplate size={20} />, label: 'Staging Area' },
   ];
 
@@ -144,6 +146,7 @@ function App() {
                   <Route path="/admin/import" element={<DataImportScreen />} />
                   <Route path="/admin/sources" element={<DataSourcesScreen />} />
                   <Route path="/admin/groups" element={<AccountGroupsScreen />} />
+                  <Route path="/admin/rule-groups" element={<RuleGroupsScreen />} />
                   <Route path="/admin/staging" element={<StagingDataScreen />} />
                   <Route path="/admin/rules" element={<RulesScreen />} />
                   <Route path="/admin/tables/:tableName" element={<SystemTableScreen />} />

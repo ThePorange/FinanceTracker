@@ -228,7 +228,7 @@ export function RulesScreen() {
        finalJson = { type: 'and', conditions: cleanGroups };
     }
 
-    const payload = {
+    const payload: any = {
        rule_name: ruleName,
        sys_account_source_id: null,
        sys_transaction_category_id: finalCategoryId,
@@ -237,6 +237,7 @@ export function RulesScreen() {
 
     try {
       if (selectedRuleId) {
+         payload.created_date = new Date().toISOString().replace('T', ' ').substring(0, 19);
          await fetch(`/api/config/sys_rules/sys_rules_id/${selectedRuleId}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
@@ -250,7 +251,6 @@ export function RulesScreen() {
          });
       }
       await refetchRules();
-      alert('Rule saved successfully!');
     } catch(e) {
       alert('Failed to save rule.');
     } finally {
@@ -261,8 +261,8 @@ export function RulesScreen() {
   const handleExecute = async () => {
      setIsExecuting(true);
      try {
-       const res = await api.executeRules();
-       alert(`Successfully executed! Mapped ${res.mappedTransactions} transactions across ${res.processedRules} rules.`);
+       await api.executeRules();
+       await refetchRules();
      } catch (e: any) {
        alert(`Execution failed: ${e.message}`);
      } finally {
@@ -272,8 +272,8 @@ export function RulesScreen() {
 
   const handleExecuteSingleRule = async (ruleId: number) => {
      try {
-       const res = await api.executeRules(undefined, ruleId);
-       alert(`Successfully executed! Mapped ${res.mappedTransactions} transactions.`);
+       await api.executeRules(undefined, ruleId);
+       await refetchRules();
      } catch (e: any) {
        alert(`Execution failed: ${e.message}`);
      }
@@ -556,9 +556,11 @@ export function RulesScreen() {
                    key={r.sys_rules_id}
                    className={`group relative p-3 flex justify-between items-center rounded-lg border transition ${selectedRuleId === r.sys_rules_id ? 'border-blue-500 bg-blue-50 shadow-sm' : 'border-transparent hover:bg-gray-50'}`}
                 >
-                   <div className="cursor-pointer flex-1" onClick={() => handleSelectRule(r)}>
-                       <p className="font-medium text-gray-900 text-sm group-hover:text-blue-700 transition">{r.rule_name || 'Unnamed Rule'}</p>
-                       <p className="text-xs text-gray-500 mt-1 truncate">{getRuleSourceText(r)}</p>
+                   <div className="cursor-pointer flex-1 min-w-0 pr-2" onClick={() => handleSelectRule(r)}>
+                       <p className="font-medium text-gray-900 text-sm group-hover:text-blue-700 transition truncate">{r.rule_name || 'Unnamed Rule'}</p>
+                       <p className="text-[11px] text-gray-500 mt-1 truncate" title={`${getRuleSourceText(r)} • ${r.last_run_count || 0} rows • ${new Date(r.created_date + 'Z').toLocaleString()}`}>
+                           {getRuleSourceText(r)} &bull; <span className="font-medium">{r.last_run_count || 0}</span> rows &bull; {new Date(r.created_date + 'Z').toLocaleString()}
+                       </p>
                    </div>
                    
                    {/* Tooltip Popup */}
@@ -702,6 +704,7 @@ export function RulesScreen() {
                                                className="w-36 bg-white border border-gray-200 rounded-lg px-2 py-2 text-sm focus:ring-2 focus:ring-blue-500"
                                             >
                                                <option value="description">Description</option>
+                                               <option value="category_name">Category</option>
                                                <option value="base_amount">Base Amount</option>
                                                <option value="transaction_date">Date</option>
                                             </select>

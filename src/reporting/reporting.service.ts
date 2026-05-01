@@ -38,6 +38,26 @@ export class ReportingService {
 
     if (queryFilters.groupId) params.push(queryFilters.groupId);
 
+    if (queryFilters.ruleGroupId) {
+      // Include transactions mapped to the rule group where exclude_rules = 0
+      where.push(`t.sys_transaction_id IN (
+          SELECT map.sys_transaction_id
+          FROM sys_transaction_category_map map
+          JOIN sys_rule_group_map rgm ON map.sys_rule_id = rgm.sys_rule_id
+          WHERE rgm.sys_rule_group_id = ? AND rgm.exclude_rules = 0
+      )`);
+      params.push(queryFilters.ruleGroupId);
+
+      // Exclude transactions mapped to the rule group where exclude_rules = 1
+      where.push(`t.sys_transaction_id NOT IN (
+          SELECT map.sys_transaction_id
+          FROM sys_transaction_category_map map
+          JOIN sys_rule_group_map rgm ON map.sys_rule_id = rgm.sys_rule_id
+          WHERE rgm.sys_rule_group_id = ? AND rgm.exclude_rules = 1
+      )`);
+      params.push(queryFilters.ruleGroupId);
+    }
+
     if (queryFilters.startDate) { where.push(`COALESCE(t.transaction_date, t.posting_date, t.created_date) >= ?`); params.push(queryFilters.startDate); }
     if (queryFilters.endDate) { where.push(`COALESCE(t.transaction_date, t.posting_date, t.created_date) <= ?`); params.push(`${queryFilters.endDate} 23:59:59`); }
 

@@ -8,6 +8,7 @@ import { Input } from '../../components/shared/Input';
 import { ChevronLeft, ChevronRight, Download, ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react';
 import { TransactionFilterPanel } from './TransactionFilterPanel';
 import { useSystemData } from '../admin/useSystemData';
+import { formatLocalDate } from '../../utils/dateUtils';
 
 const PAGE_SIZE = 50;
 
@@ -123,8 +124,8 @@ export function TransactionsScreen() {
 
     const headers = ['Posting Date', 'Transaction Date', 'Description', 'Amount', 'DR/CR', 'Account', 'Auto Category', 'User Category', 'Type'];
     const rows = filtered.map(t => [
-       t.posting_date ? new Date(t.posting_date).toLocaleDateString() : '-',
-       t.transaction_date ? new Date(t.transaction_date).toLocaleDateString() : '-',
+       formatLocalDate(t.posting_date),
+       formatLocalDate(t.transaction_date),
        `"${(t.description || '').replace(/"/g, '""')}"`,
        t.amount,
        t.drcr || '-',
@@ -190,7 +191,7 @@ export function TransactionsScreen() {
       />
 
       {/* KPI Summary */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
          <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm flex flex-col">
             <span className="text-sm font-medium text-gray-500">Total Credits (Inflow)</span>
             <span className="text-3xl font-bold text-green-600">${Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(totalCR)}</span>
@@ -198,6 +199,12 @@ export function TransactionsScreen() {
          <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm flex flex-col">
             <span className="text-sm font-medium text-gray-500">Total Debits (Outflow)</span>
             <span className="text-3xl font-bold text-rose-600">${Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(totalDR)}</span>
+         </div>
+         <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm flex flex-col">
+            <span className="text-sm font-medium text-gray-500">Net Total</span>
+            <span className={`text-3xl font-bold ${totalCR - totalDR >= 0 ? 'text-indigo-600' : 'text-amber-600'}`}>
+               ${Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(totalCR - totalDR)}
+            </span>
          </div>
       </div>
       
@@ -221,8 +228,8 @@ export function TransactionsScreen() {
             className="hover:bg-gray-50 cursor-pointer transition-colors group"
             onClick={() => setSelectedTxn(txn)}
           >
-            <td className="px-4 py-4 text-gray-600 group-hover:text-gray-900 whitespace-nowrap">{txn.posting_date ? new Date(txn.posting_date).toLocaleDateString() : '-'}</td>
-            <td className="px-4 py-4 text-gray-600 group-hover:text-gray-900 whitespace-nowrap">{txn.transaction_date ? new Date(txn.transaction_date).toLocaleDateString() : '-'}</td>
+            <td className="px-4 py-4 text-gray-600 group-hover:text-gray-900 whitespace-nowrap">{formatLocalDate(txn.posting_date)}</td>
+            <td className="px-4 py-4 text-gray-600 group-hover:text-gray-900 whitespace-nowrap">{formatLocalDate(txn.transaction_date)}</td>
             <td className="px-4 py-4 font-medium text-gray-800">{txn.description}</td>
             <td className="px-4 py-4 font-medium text-gray-900 whitespace-nowrap">${txn.amount != null ? Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(txn.amount) : '0.00'}</td>
             <td className="px-4 py-4 text-gray-600 font-bold">{txn.drcr || '-'}</td>

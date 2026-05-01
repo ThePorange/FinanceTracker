@@ -47,16 +47,17 @@ export class RulesService {
        // Clear prior automation links for this specific rule identically ensuring idempotency
        db.prepare(`DELETE FROM sys_transaction_category_map WHERE sys_rule_id = ? AND is_auto = 1`).run(rule.sys_rules_id);
 
-       // Isolate transactions securely verifying against manual hooks natively configured
+       // Isolate transactions and join with categorization info to support Category filtering
        const selectSql = `
-         SELECT sys_transaction_id FROM sys_transaction 
-         WHERE ${finalWhere}
+         SELECT t.sys_transaction_id FROM sys_transaction t
+         LEFT JOIN vw_transaction_final_category cat ON t.sys_transaction_id = cat.sys_transaction_id
+         WHERE ${finalWhere.replace(/\b(description|category_name|base_amount|transaction_date|posting_date|created_date|sys_account_source_id|row_checksum)\b/g, (m) => m === 'category_name' ? 'cat.category_name' : `t.${m}`)}
        `;
        const matches = db.prepare(selectSql).all(...finalParams) as any[];
 
        if (matches.length > 0) {
           const insertStmt = db.prepare(`
-             INSERT INTO sys_transaction_category_map (sys_transaction_id, sys_transaction_category_id, is_auto, confidence, sys_rule_id)
+             INSERT OR REPLACE INTO sys_transaction_category_map (sys_transaction_id, sys_transaction_category_id, is_auto, confidence, sys_rule_id)
              VALUES (?, ?, 1, ?, ?)
           `);
           const insertMany = db.transaction((txns: any[]) => {

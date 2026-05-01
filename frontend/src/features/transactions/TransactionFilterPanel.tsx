@@ -32,15 +32,25 @@ export function TransactionFilterPanel({ filters, onFilterChange, defaultExpande
   const { data: groupsData } = useSystemData('sys_account_group');
   const { data: typesData } = useSystemData('sys_transaction_type');
   const { data: rulesData } = useSystemData('sys_rules');
+  const { data: ruleGroupsData } = useSystemData('sys_rule_group');
 
   const sources = sourcesData?.data || sourcesData || [];
   const groups = groupsData?.data || groupsData || [];
   const types = typesData?.data || typesData || [];
   const rules = rulesData?.data || rulesData || [];
+  const ruleGroups = ruleGroupsData?.data || ruleGroupsData || [];
 
   const handleUpdate = (key: string, value: any) => {
     setLocalFilters(prev => {
       const next = { ...prev, [key]: value };
+      
+      // Mutually exclusive rule filtering
+      if (key === 'ruleGroupId' && value) {
+        delete next['ruleId'];
+      } else if (key === 'ruleId' && value) {
+        delete next['ruleGroupId'];
+      }
+
       if (value === undefined || value === null || value === '') {
         delete next[key];
       }
@@ -174,6 +184,19 @@ export function TransactionFilterPanel({ filters, onFilterChange, defaultExpande
               >
                 <option value="">All Types</option>
                 {types.map((t: any) => <option key={t.sys_transaction_type_id} value={t.sys_transaction_type_id}>{t.transaction_type}</option>)}
+              </select>
+          </div>
+
+          {/* Rule Group */}
+          <div>
+             <label className="block text-sm font-medium text-gray-700 mb-1">Rule Group</label>
+             <select 
+                value={localFilters.ruleGroupId || ''} 
+                onChange={e => handleUpdate('ruleGroupId', e.target.value)}
+                className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">Any Rule Group</option>
+                {ruleGroups.map((rg: any) => <option key={rg.sys_rule_group_id} value={rg.sys_rule_group_id}>{rg.rule_group_name}</option>)}
               </select>
           </div>
 

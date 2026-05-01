@@ -16,7 +16,9 @@ export class ConfigService {
     'sys_transaction',
     'sys_import_log',
     'sys_account_group',
-    'sys_account_group_map'
+    'sys_account_group_map',
+    'sys_rule_group',
+    'sys_rule_group_map'
   ];
 
   constructor(private readonly dbService: DatabaseService) {}

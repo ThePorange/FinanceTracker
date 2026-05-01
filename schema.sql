@@ -164,6 +164,25 @@ CREATE TABLE sys_rules (
     FOREIGN KEY(sys_account_source_id) REFERENCES sys_account_source(sys_account_source_id)
 );
 
+CREATE TABLE sys_rule_group (
+    sys_rule_group_id INTEGER PRIMARY KEY,
+    rule_group_name VARCHAR(250) NOT NULL,
+    created_date DATE DEFAULT CURRENT_TIMESTAMP,
+    last_run DATE,
+    last_run_count INTEGER DEFAULT 0
+);
+
+CREATE TABLE sys_rule_group_map (
+    sys_rule_group_map_id INTEGER PRIMARY KEY,
+    sys_rule_group_id INTEGER,
+    sys_rule_id INTEGER,
+    exclude_rules INTEGER DEFAULT 0,  -- If 1, these rules will be excluded from the group
+    created_date DATE DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(sys_rule_group_id) REFERENCES sys_rule_group(sys_rule_group_id),
+    FOREIGN KEY(sys_rule_id) REFERENCES sys_rules(sys_rules_id),
+    UNIQUE(sys_rule_group_id, sys_rule_id)
+);
+
 CREATE TABLE sys_currency (
     sys_currency_id INTEGER PRIMARY KEY,
     currency_code VARCHAR(10) NOT NULL,
