@@ -34,11 +34,11 @@ export function TransactionFilterPanel({ filters, onFilterChange, defaultExpande
   const { data: rulesData } = useSystemData('sys_rules');
   const { data: ruleGroupsData } = useSystemData('sys_rule_group');
 
-  const sources = sourcesData?.data || sourcesData || [];
-  const groups = groupsData?.data || groupsData || [];
-  const types = typesData?.data || typesData || [];
-  const rules = rulesData?.data || rulesData || [];
-  const ruleGroups = ruleGroupsData?.data || ruleGroupsData || [];
+  const sources = [...(sourcesData?.data || sourcesData || [])].sort((a: any, b: any) => (a.account_source_name || '').localeCompare(b.account_source_name || ''));
+  const groups = [...(groupsData?.data || groupsData || [])].sort((a: any, b: any) => (a.account_group_name || '').localeCompare(b.account_group_name || ''));
+  const types = [...(typesData?.data || typesData || [])].sort((a: any, b: any) => (a.transaction_type || '').localeCompare(b.transaction_type || ''));
+  const rules = [...(rulesData?.data || rulesData || [])].sort((a: any, b: any) => (a.rule_name || '').localeCompare(b.rule_name || ''));
+  const ruleGroups = [...(ruleGroupsData?.data || ruleGroupsData || [])].sort((a: any, b: any) => (a.rule_group_name || '').localeCompare(b.rule_group_name || ''));
 
   const handleUpdate = (key: string, value: any) => {
     setLocalFilters(prev => {
@@ -49,6 +49,13 @@ export function TransactionFilterPanel({ filters, onFilterChange, defaultExpande
         delete next['ruleId'];
       } else if (key === 'ruleId' && value) {
         delete next['ruleGroupId'];
+      }
+
+      // Mutually exclusive account filtering
+      if (key === 'groupId' && value) {
+        delete next['sourceId'];
+      } else if (key === 'sourceId' && value) {
+        delete next['groupId'];
       }
 
       if (value === undefined || value === null || value === '') {

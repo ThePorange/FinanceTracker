@@ -29,7 +29,7 @@ export function RulesScreen() {
   const { data: categoriesData, refetch: refetchCategories } = useSystemData('sys_transaction_category');
   const { data: sourcesData } = useSystemData('sys_account_source');
 
-  const rules = rulesData?.data || [];
+  const rules = [...(rulesData?.data || [])].sort((a: any, b: any) => (a.rule_name || '').localeCompare(b.rule_name || ''));
   const categories = categoriesData?.data || [];
   const sources = sourcesData?.data || [];
 
