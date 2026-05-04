@@ -16,12 +16,14 @@ type RuleCondition = {
   max?: number;
   checksums?: string[];
   operator?: 'LIKE' | 'NOT LIKE';
+  afterOperator?: 'and' | 'or'; // operator connecting this condition to the NEXT one
 };
 
 type RuleGroup = {
   id: string;
   sourceId?: number | '';
   conditions: RuleCondition[];
+  afterOperator?: 'and' | 'or'; // operator connecting this block to the NEXT block
 };
 
 export function RulesScreen() {
@@ -63,44 +65,64 @@ export function RulesScreen() {
     let loadedGroups: RuleGroup[] = [];
 
     if (parsed) {
-       function parseBlock(node: any): RuleGroup {
+       // Recursively parse a node into a RuleGroup UI structure
+       function parseBlock(node: any, blockJoinOp: 'and' | 'or' = 'and'): RuleGroup {
           let sourceId: number | '' = '';
           let uiConditions: any[] = [];
+          let condJoinOp: 'and' | 'or' = 'or'; // default within block
 
-          if (node.type === 'and' && node.conditions) {
+          if (node.type === 'and' || node.type === 'or') {
+             condJoinOp = node.type;
              const sourceNode = node.conditions.find((c: any) => c.type === 'source');
              if (sourceNode) {
                 sourceId = sourceNode.value;
                 const otherNodes = node.conditions.filter((c: any) => c.type !== 'source');
-                if (otherNodes.length === 1) {
+                if (otherNodes.length === 1 && (otherNodes[0].type === 'and' || otherNodes[0].type === 'or')) {
                    const child = otherNodes[0];
-                   if (child.type === 'or' && child.conditions) {
-                      uiConditions = child.conditions;
-                   } else {
-                      uiConditions = [child];
-                   }
+                   condJoinOp = child.type;
+                   uiConditions = child.conditions;
                 } else {
                    uiConditions = otherNodes;
                 }
              } else {
-                uiConditions = [node];
+                uiConditions = node.conditions;
              }
-          } else if (node.type === 'or' && node.conditions) {
-             uiConditions = node.conditions;
           } else {
              uiConditions = [node];
           }
 
-          uiConditions = uiConditions.map(c => ({...c, id: Math.random().toString()}));
-          return { id: Math.random().toString(), sourceId, conditions: uiConditions };
+          // Assign afterOperator to each condition based on the block's join type
+          uiConditions = uiConditions.map((c, i) => ({
+             ...c,
+             id: Math.random().toString(),
+             afterOperator: i < uiConditions.length - 1 ? condJoinOp : undefined
+          }));
+          return { id: Math.random().toString(), sourceId, conditions: uiConditions, afterOperator: blockJoinOp };
        }
+
+       // A top-level 'and' represents MULTIPLE BLOCKS only if its children are themselves
+       // logical nodes (and/or). If children are all leaf conditions, it's a SINGLE BLOCK
+       // with AND-joined conditions.
+       const isLogicalNode = (node: any) => node.type === 'and' || node.type === 'or';
 
        if (parsed.type === 'and' && parsed.conditions) {
           const hasSource = parsed.conditions.some((c: any) => c.type === 'source');
-          if (hasSource) {
+          const hasNestedLogic = parsed.conditions.some((c: any) => isLogicalNode(c));
+          if (hasSource || !hasNestedLogic) {
+             // Single block: either source-scoped or all leaf conditions
              loadedGroups = [parseBlock(parsed)];
           } else {
-             loadedGroups = parsed.conditions.map((c: any) => parseBlock(c));
+             // Multiple blocks joined by AND
+             loadedGroups = parsed.conditions.map((c: any) => parseBlock(c, 'and'));
+          }
+       } else if (parsed.type === 'or' && parsed.conditions) {
+          const hasNestedLogic = parsed.conditions.some((c: any) => isLogicalNode(c));
+          if (!hasNestedLogic) {
+             // Single block with OR conditions
+             loadedGroups = [parseBlock(parsed)];
+          } else {
+             // Multiple blocks joined by OR
+             loadedGroups = parsed.conditions.map((c: any) => parseBlock(c, 'or'));
           }
        } else {
           loadedGroups = [parseBlock(parsed)];
@@ -120,22 +142,42 @@ export function RulesScreen() {
     setRuleName('');
     setCategoryInput('');
     setLastRun(null);
-    setGroups([{ id: Math.random().toString(), sourceId: '', conditions: [{ id: Math.random().toString(), type: 'contains', field: 'description', value: '' }] }]);
+    setGroups([{ id: Math.random().toString(), sourceId: '', afterOperator: 'and', conditions: [{ id: Math.random().toString(), type: 'contains', field: 'description', value: '' }] }]);
   };
 
-  const addGroup = () => {
+  const addGroup = (joinOp: 'and' | 'or' = 'and') => {
     const lastSourceId = groups.length > 0 ? groups[groups.length - 1].sourceId : '';
-    setGroups([...groups, { id: Math.random().toString(), sourceId: lastSourceId, conditions: [{ id: Math.random().toString(), type: 'contains', field: 'description', value: '' }] }]);
+    // Set the preceding block's afterOperator
+    setGroups(prev => {
+      const updated = prev.map((g, i) => i === prev.length - 1 ? { ...g, afterOperator: joinOp } : g);
+      return [...updated, { id: Math.random().toString(), sourceId: lastSourceId, afterOperator: 'and', conditions: [{ id: Math.random().toString(), type: 'contains', field: 'description', value: '' }] }];
+    });
+  };
+
+  const toggleBlockOperator = (gId: string) => {
+    setGroups(prev => prev.map(g => g.id === gId ? { ...g, afterOperator: g.afterOperator === 'and' ? 'or' : 'and' } : g));
   };
 
   const removeGroup = (gId: string) => {
     setGroups(groups.filter(g => g.id !== gId));
   };
 
-  const addConditionToGroup = (gId: string) => {
+  const addConditionToGroup = (gId: string, joinOp: 'and' | 'or' = 'or') => {
     setGroups(groups.map(g => {
-       if (g.id === gId) return { ...g, conditions: [...g.conditions, { id: Math.random().toString(), type: 'contains', field: 'description', value: '' }] };
+       if (g.id === gId) {
+         const updated = g.conditions.map((c, i) => i === g.conditions.length - 1 ? { ...c, afterOperator: joinOp } : c);
+         return { ...g, conditions: [...updated, { id: Math.random().toString(), type: 'contains', field: 'description', value: '', afterOperator: undefined }] };
+       }
        return g;
+    }));
+  };
+
+  const toggleConditionOperator = (gId: string, cId: string) => {
+    setGroups(groups.map(g => {
+      if (g.id === gId) {
+        return { ...g, conditions: g.conditions.map(c => c.id === cId ? { ...c, afterOperator: c.afterOperator === 'and' ? 'or' : 'and' } : c) };
+      }
+      return g;
     }));
   };
 
@@ -188,7 +230,7 @@ export function RulesScreen() {
 
     let finalJson: any = {};
     
-    // Build JSON securely preventing empty strings parsing natively
+    // Build JSON respecting AND/OR operators between conditions and between blocks
     const cleanGroups = groups.map(g => {
        const valid = g.conditions.filter(c => {
           if (c.type === 'contains' || c.type === 'equals') return c.value && String(c.value).trim() !== '';
@@ -198,23 +240,37 @@ export function RulesScreen() {
           return false;
        });
        const conds = valid.map(c => {
-          const { id, ...rest } = c;
+          const { id, afterOperator, ...rest } = c;
           if (rest.type === 'date_range') rest.field = 'transaction_date';
           return rest;
        });
        if (conds.length === 0) return null;
-       
+
+       // Build the inner condition tree respecting per-condition afterOperator
+       // Group consecutive conditions sharing the same operator into nested nodes
        let blockJson: any;
        if (conds.length === 1) {
           blockJson = conds[0];
        } else {
-          blockJson = { type: 'or', conditions: conds };
+          // Determine the dominant join operator for this block from the conditions' afterOperators
+          const ops = valid.slice(0, -1).map(c => c.afterOperator || 'or');
+          const hasAnd = ops.includes('and');
+          const hasOr = ops.includes('or');
+          let joinType: 'and' | 'or' = 'or';
+          if (hasAnd && !hasOr) joinType = 'and';
+          else if (hasAnd && hasOr) {
+             // Mixed: build nested structure splitting on AND first (AND has higher precedence)
+             // Simple approach: flatten all with OR at top level, AND groups as sub-nodes
+             // For now use the first operator as the group join type
+             joinType = ops[0] || 'or';
+          }
+          blockJson = { type: joinType, conditions: conds };
        }
 
        if (g.sourceId) {
-          return { type: 'and', conditions: [{ type: 'source', value: g.sourceId }, blockJson] };
+          return { type: 'and', conditions: [{ type: 'source', value: g.sourceId }, blockJson], _afterOperator: g.afterOperator || 'and' };
        }
-       return blockJson;
+       return { ...blockJson, _afterOperator: g.afterOperator || 'and' };
     }).filter(gc => gc !== null);
 
     if (cleanGroups.length === 0) {
@@ -223,9 +279,14 @@ export function RulesScreen() {
     }
 
     if (cleanGroups.length === 1) {
-       finalJson = cleanGroups[0];
+       const { _afterOperator, ...rest } = cleanGroups[0];
+       finalJson = rest;
     } else {
-       finalJson = { type: 'and', conditions: cleanGroups };
+       // Determine top-level join operator from the blocks' afterOperators
+       const blockOps = cleanGroups.slice(0, -1).map((g: any) => g._afterOperator || 'and');
+       const topJoinType = blockOps.includes('or') && !blockOps.includes('and') ? 'or' : 'and';
+       const cleanConds = cleanGroups.map(({ _afterOperator, ...rest }: any) => rest);
+       finalJson = { type: topJoinType, conditions: cleanConds };
     }
 
     const payload: any = {
@@ -641,36 +702,59 @@ export function RulesScreen() {
                     </div>
 
                     <div className="space-y-6">
-                       {groups.map((group, gIndex) => (
-                          <div key={group.id} className="relative p-5 bg-gray-50/50 border border-gray-200 rounded-xl shadow-sm">
-                             {gIndex > 0 && (
-                                <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-xs font-bold tracking-widest shadow-sm border border-blue-200">
-                                   AND
-                                </div>
-                             )}
-                             
-                             <div className="flex justify-between items-center mb-3">
-                                <span className="text-xs font-bold text-gray-500 uppercase tracking-widest">Block {gIndex + 1} (Match ANY of these)</span>
-                                <div className="flex items-center gap-3">
-                                   <select 
-                                      value={group.sourceId || ''} 
-                                      onChange={e => {
-                                         const newSourceId = e.target.value ? parseInt(e.target.value) : '';
-                                         setGroups(groups.map(g => g.id === group.id ? { ...g, sourceId: newSourceId } : g));
-                                      }}
-                                      className="bg-white border border-gray-200 text-gray-700 rounded-lg px-2 py-1.5 text-xs font-medium focus:ring-2 focus:ring-blue-500 shadow-sm"
-                                   >
-                                      <option value="">Global (All Sources)</option>
-                                      {sources.map((s: any) => <option key={s.sys_account_source_id} value={s.sys_account_source_id}>{s.account_source_name}</option>)}
-                                   </select>
-                                   <button onClick={() => removeGroup(group.id)} className="text-gray-400 hover:text-red-500 transition"><Trash2 className="w-4 h-4"/></button>
-                                </div>
-                             </div>
-                             
-                             <div className="space-y-3 pl-4 border-l-2 border-blue-200">
-                                {group.conditions.map((cond, cIndex) => (
-                                   <div key={cond.id} className="relative flex flex-col gap-2">
-                                      {cIndex > 0 && <div className="text-xs font-bold text-blue-500 tracking-widest -ml-4 py-1">OR</div>}
+                        {groups.map((group, gIndex) => (
+                           <div key={group.id}>
+                              {gIndex > 0 && (
+                                 <div className="flex items-center justify-center my-2">
+                                    <button
+                                       onClick={() => toggleBlockOperator(groups[gIndex - 1].id)}
+                                       className={`px-4 py-1 rounded-full text-xs font-bold tracking-widest shadow-sm border transition-colors ${
+                                          (groups[gIndex - 1].afterOperator || 'and') === 'and'
+                                             ? 'bg-blue-100 text-blue-800 border-blue-200 hover:bg-blue-200'
+                                             : 'bg-purple-100 text-purple-800 border-purple-200 hover:bg-purple-200'
+                                       }`}
+                                       title="Click to toggle between AND / OR"
+                                    >
+                                       {(groups[gIndex - 1].afterOperator || 'and').toUpperCase()}
+                                    </button>
+                                 </div>
+                              )}
+
+                              <div className="relative p-5 bg-gray-50/50 border border-gray-200 rounded-xl shadow-sm">
+                              <div className="flex justify-between items-center mb-3">
+                                 <span className="text-xs font-bold text-gray-500 uppercase tracking-widest">Block {gIndex + 1}</span>
+                                 <div className="flex items-center gap-3">
+                                    <select 
+                                       value={group.sourceId || ''} 
+                                       onChange={e => {
+                                          const newSourceId = e.target.value ? parseInt(e.target.value) : '';
+                                          setGroups(groups.map(g => g.id === group.id ? { ...g, sourceId: newSourceId } : g));
+                                       }}
+                                       className="bg-white border border-gray-200 text-gray-700 rounded-lg px-2 py-1.5 text-xs font-medium focus:ring-2 focus:ring-blue-500 shadow-sm"
+                                    >
+                                       <option value="">Global (All Sources)</option>
+                                       {sources.map((s: any) => <option key={s.sys_account_source_id} value={s.sys_account_source_id}>{s.account_source_name}</option>)}
+                                    </select>
+                                    <button onClick={() => removeGroup(group.id)} className="text-gray-400 hover:text-red-500 transition"><Trash2 className="w-4 h-4"/></button>
+                                 </div>
+                              </div>
+                              
+                              <div className="space-y-3 pl-4 border-l-2 border-blue-200">
+                                 {group.conditions.map((cond, cIndex) => (
+                                    <div key={cond.id} className="relative flex flex-col gap-2">
+                                       {cIndex > 0 && (
+                                          <button
+                                             onClick={() => toggleConditionOperator(group.id, group.conditions[cIndex - 1].id)}
+                                             className={`self-start text-xs font-bold tracking-widest -ml-4 py-0.5 px-2 rounded-full border transition-colors ${
+                                                (group.conditions[cIndex - 1].afterOperator || 'or') === 'or'
+                                                   ? 'text-blue-600 border-blue-200 bg-blue-50 hover:bg-blue-100'
+                                                   : 'text-purple-700 border-purple-200 bg-purple-50 hover:bg-purple-100'
+                                             }`}
+                                             title="Click to toggle between AND / OR"
+                                          >
+                                             {(group.conditions[cIndex - 1].afterOperator || 'or').toUpperCase()}
+                                          </button>
+                                       )}
                                       
                                       <div className="flex gap-3">
                                          <select 
@@ -710,7 +794,6 @@ export function RulesScreen() {
                                             </select>
                                          )}
 
-                                         {/* Dynamic Value Inputs based on Type */}
                                          <div className="flex-1 flex gap-2">
                                             {(cond.type === 'contains' || cond.type === 'equals') && (
                                                <>
@@ -751,19 +834,28 @@ export function RulesScreen() {
                                          </div>
                                       </div>
                                    </div>
-                                ))}
-                                <button onClick={() => addConditionToGroup(group.id)} className="mt-1 text-xs font-bold text-blue-600 hover:text-blue-700 bg-blue-100/50 hover:bg-blue-100 px-3 py-1.5 rounded-md transition border border-transparent hover:border-blue-200">
-                                   + Add OR Condition
-                                </button>
-                             </div>
-                          </div>
-                       ))}
-                       
-                       <div className="flex justify-center mt-2">
-                          <button onClick={addGroup} className="flex items-center gap-2 text-sm font-bold text-blue-700 bg-white hover:bg-blue-50 px-5 py-2.5 rounded-lg transition border border-blue-200 shadow-sm">
-                             <Plus className="w-4 h-4" /> Add AND Block
-                          </button>
-                       </div>
+                                 ))}
+                                 <div className="flex gap-2 mt-2">
+                                    <button onClick={() => addConditionToGroup(group.id, 'or')} className="text-xs font-bold text-blue-600 hover:text-blue-700 bg-blue-100/50 hover:bg-blue-100 px-3 py-1.5 rounded-md transition border border-transparent hover:border-blue-200">
+                                       + Add OR Condition
+                                    </button>
+                                    <button onClick={() => addConditionToGroup(group.id, 'and')} className="text-xs font-bold text-purple-700 hover:text-purple-800 bg-purple-50 hover:bg-purple-100 px-3 py-1.5 rounded-md transition border border-transparent hover:border-purple-200">
+                                       + Add AND Condition
+                                    </button>
+                                 </div>
+                              </div>
+                              </div>
+                           </div>
+                        ))}
+                        
+                        <div className="flex justify-center gap-3 mt-2">
+                           <button onClick={() => addGroup('and')} className="flex items-center gap-2 text-sm font-bold text-blue-700 bg-white hover:bg-blue-50 px-5 py-2.5 rounded-lg transition border border-blue-200 shadow-sm">
+                              <Plus className="w-4 h-4" /> Add AND Block
+                           </button>
+                           <button onClick={() => addGroup('or')} className="flex items-center gap-2 text-sm font-bold text-purple-700 bg-white hover:bg-purple-50 px-5 py-2.5 rounded-lg transition border border-purple-200 shadow-sm">
+                              <Plus className="w-4 h-4" /> Add OR Block
+                           </button>
+                        </div>
                     </div>
                  </div>
 
