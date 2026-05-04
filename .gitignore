@@ -114,3 +114,27 @@ docs/*
 
 # temp
 .temp/*
+
+# Data Imports & Exports
+*.pdf
+*.csv
+*.xlsx
+*.xls
+*.tsv
+*.xml
+*.json
+!package.json
+!package-lock.json
+!tsconfig*.json
+!nest-cli.json
+!frontend/package.json
+!frontend/package-lock.json
+!frontend/tsconfig*.json
+!.eslintrc.json
+!.prettierrc.json
+
+# Backups
+*.bak
+*.sql.gz
+*.sql.zip
+
