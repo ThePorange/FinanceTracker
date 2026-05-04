@@ -11,6 +11,7 @@ interface TransactionFilterPanelProps {
 export function TransactionFilterPanel({ filters, onFilterChange, defaultExpanded = false }: TransactionFilterPanelProps) {
   const [isOpen, setIsOpen] = useState(defaultExpanded);
   const [localFilters, setLocalFilters] = useState<Record<string, any>>(filters);
+  const [tempEndDate, setTempEndDate] = useState<string | null>(null);
   
   // Sync when filters are explicitly cleared or changed from the outside
   React.useEffect(() => {
@@ -113,8 +114,14 @@ export function TransactionFilterPanel({ filters, onFilterChange, defaultExpande
               <span className="text-gray-400 self-center">to</span>
               <input 
                 type="date" 
-                value={localFilters.endDate || ''} 
-                onChange={e => handleUpdate('endDate', e.target.value)}
+                value={tempEndDate ?? localFilters.endDate ?? ''}
+                onFocus={() => {
+                  if (!localFilters.endDate && localFilters.startDate) {
+                    setTempEndDate(localFilters.startDate);
+                  }
+                }}
+                onBlur={() => setTempEndDate(null)}
+                onChange={e => { setTempEndDate(null); handleUpdate('endDate', e.target.value); }}
                 className="w-full bg-white border border-gray-200 rounded-lg px-2 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 min-w-0"
               />
             </div>

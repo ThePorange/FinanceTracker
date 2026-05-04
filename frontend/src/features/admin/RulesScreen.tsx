@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useSystemData } from './useSystemData';
 import { Input } from '../../components/shared/Input';
-import { Play, Plus, Trash2, Save, FileJson, ListChecks, Download } from 'lucide-react';
+import { Play, Plus, Trash2, Save, FileJson, ListChecks, Download, Copy } from 'lucide-react';
 import { api } from '../../services/api';
 import { TransactionSelectorModal } from './TransactionSelectorModal';
 
@@ -160,6 +160,22 @@ export function RulesScreen() {
 
   const removeGroup = (gId: string) => {
     setGroups(groups.filter(g => g.id !== gId));
+  };
+
+  const duplicateGroup = (gId: string) => {
+    const source = groups.find(g => g.id === gId);
+    if (!source) return;
+    const clone: typeof source = {
+      ...source,
+      id: Math.random().toString(),
+      afterOperator: 'and',
+      conditions: source.conditions.map(c => ({ ...c, id: Math.random().toString() }))
+    };
+    // Set the last existing block's afterOperator to AND before appending
+    setGroups(prev => {
+      const updated = prev.map((g, i) => i === prev.length - 1 ? { ...g, afterOperator: 'and' } : g);
+      return [...updated, clone];
+    });
   };
 
   const addConditionToGroup = (gId: string, joinOp: 'and' | 'or' = 'or') => {
@@ -735,7 +751,8 @@ export function RulesScreen() {
                                        <option value="">Global (All Sources)</option>
                                        {sources.map((s: any) => <option key={s.sys_account_source_id} value={s.sys_account_source_id}>{s.account_source_name}</option>)}
                                     </select>
-                                    <button onClick={() => removeGroup(group.id)} className="text-gray-400 hover:text-red-500 transition"><Trash2 className="w-4 h-4"/></button>
+                                     <button onClick={() => duplicateGroup(group.id)} title="Duplicate this block" className="text-gray-400 hover:text-blue-500 transition"><Copy className="w-4 h-4"/></button>
+                                     <button onClick={() => removeGroup(group.id)} className="text-gray-400 hover:text-red-500 transition"><Trash2 className="w-4 h-4"/></button>
                                  </div>
                               </div>
                               
