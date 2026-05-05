@@ -169,6 +169,6 @@
 - sys_fx_rate: 5000
 - sys_config: 20
 - sys_staging_fields: 20
-- sys_transaction: 10000
+- sys_transaction: 50000
 - sys_account_mapping: 100
 
