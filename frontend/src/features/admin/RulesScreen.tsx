@@ -65,59 +65,71 @@ export function RulesScreen() {
     let loadedGroups: RuleGroup[] = [];
 
     if (parsed) {
-       // Recursively parse a node into a RuleGroup UI structure
+       // Flatten a nested AND/OR tree into a linear list of [condition, afterOperator] pairs
+       function flattenNode(n: any, parentJoinOp?: 'and' | 'or'): { cond: any, afterOp?: 'and' | 'or' }[] {
+          if (n.type !== 'and' && n.type !== 'or') {
+             return [{ cond: n }];
+          }
+          const results: { cond: any, afterOp?: 'and' | 'or' }[] = [];
+          for (let i = 0; i < n.conditions.length; i++) {
+             const child = n.conditions[i];
+             const isLast = i === n.conditions.length - 1;
+             const childFlat = flattenNode(child, n.type);
+             for (let j = 0; j < childFlat.length; j++) {
+                const isLastChild = j === childFlat.length - 1;
+                if (isLastChild && !isLast) {
+                   results.push({ cond: childFlat[j].cond, afterOp: n.type as 'and' | 'or' });
+                } else if (isLastChild && isLast) {
+                   results.push({ cond: childFlat[j].cond, afterOp: parentJoinOp });
+                } else {
+                   results.push({ cond: childFlat[j].cond, afterOp: childFlat[j].afterOp });
+                }
+             }
+          }
+          return results;
+       }
+
        function parseBlock(node: any, blockJoinOp: 'and' | 'or' = 'and'): RuleGroup {
           let sourceId: number | '' = '';
-          let uiConditions: any[] = [];
-          let condJoinOp: 'and' | 'or' = 'or'; // default within block
+          let coreNode = node;
 
-          if (node.type === 'and' || node.type === 'or') {
-             condJoinOp = node.type;
+          // Extract source node if present
+          if ((node.type === 'and' || node.type === 'or') && node.conditions) {
              const sourceNode = node.conditions.find((c: any) => c.type === 'source');
              if (sourceNode) {
                 sourceId = sourceNode.value;
-                const otherNodes = node.conditions.filter((c: any) => c.type !== 'source');
-                if (otherNodes.length === 1 && (otherNodes[0].type === 'and' || otherNodes[0].type === 'or')) {
-                   const child = otherNodes[0];
-                   condJoinOp = child.type;
-                   uiConditions = child.conditions;
-                } else {
-                   uiConditions = otherNodes;
-                }
-             } else {
-                uiConditions = node.conditions;
+                const others = node.conditions.filter((c: any) => c.type !== 'source');
+                coreNode = others.length === 1 ? others[0] : { type: node.type, conditions: others };
              }
-          } else {
-             uiConditions = [node];
           }
 
-          // Assign afterOperator to each condition based on the block's join type
-          uiConditions = uiConditions.map((c, i) => ({
-             ...c,
+          const flat = flattenNode(coreNode);
+          const uiConditions = flat.map((item, i) => ({
+             ...item.cond,
              id: Math.random().toString(),
-             afterOperator: i < uiConditions.length - 1 ? condJoinOp : undefined
+             afterOperator: i < flat.length - 1 ? item.afterOp : undefined
           }));
           return { id: Math.random().toString(), sourceId, conditions: uiConditions, afterOperator: blockJoinOp };
        }
 
-       // A top-level 'and' represents MULTIPLE BLOCKS only if its children are themselves
-       // logical nodes (and/or). If children are all leaf conditions, it's a SINGLE BLOCK
-       // with AND-joined conditions.
+       // Multiple blocks: top-level node's children are ALL logical (and/or) nodes.
+       // Single block: some or all children are leaf conditions.
        const isLogicalNode = (node: any) => node.type === 'and' || node.type === 'or';
 
        if (parsed.type === 'and' && parsed.conditions) {
           const hasSource = parsed.conditions.some((c: any) => c.type === 'source');
-          const hasNestedLogic = parsed.conditions.some((c: any) => isLogicalNode(c));
-          if (hasSource || !hasNestedLogic) {
-             // Single block: either source-scoped or all leaf conditions
+          const nonSourceChildren = parsed.conditions.filter((c: any) => c.type !== 'source');
+          const allChildrenAreBlocks = nonSourceChildren.length > 1 && nonSourceChildren.every((c: any) => isLogicalNode(c));
+          if (hasSource || !allChildrenAreBlocks) {
+             // Single block: source-scoped OR mixed leaf+logical children
              loadedGroups = [parseBlock(parsed)];
           } else {
              // Multiple blocks joined by AND
              loadedGroups = parsed.conditions.map((c: any) => parseBlock(c, 'and'));
           }
        } else if (parsed.type === 'or' && parsed.conditions) {
-          const hasNestedLogic = parsed.conditions.some((c: any) => isLogicalNode(c));
-          if (!hasNestedLogic) {
+          const allChildrenAreBlocks = parsed.conditions.length > 1 && parsed.conditions.every((c: any) => isLogicalNode(c));
+          if (!allChildrenAreBlocks) {
              // Single block with OR conditions
              loadedGroups = [parseBlock(parsed)];
           } else {
@@ -263,25 +275,36 @@ export function RulesScreen() {
        if (conds.length === 0) return null;
 
        // Build the inner condition tree respecting per-condition afterOperator
-       // Group consecutive conditions sharing the same operator into nested nodes
        let blockJson: any;
        if (conds.length === 1) {
           blockJson = conds[0];
        } else {
-          // Determine the dominant join operator for this block from the conditions' afterOperators
-          const ops = valid.slice(0, -1).map(c => c.afterOperator || 'or');
-          const hasAnd = ops.includes('and');
-          const hasOr = ops.includes('or');
-          let joinType: 'and' | 'or' = 'or';
-          if (hasAnd && !hasOr) joinType = 'and';
-          else if (hasAnd && hasOr) {
-             // Mixed: build nested structure splitting on AND first (AND has higher precedence)
-             // Simple approach: flatten all with OR at top level, AND groups as sub-nodes
-             // For now use the first operator as the group join type
-             joinType = ops[0] || 'or';
-          }
-          blockJson = { type: joinType, conditions: conds };
-       }
+           const ops = valid.slice(0, -1).map(c => c.afterOperator || 'or');
+           const allOr = ops.every(op => op === 'or');
+           const allAnd = ops.every(op => op === 'and');
+
+           if (allOr) {
+              blockJson = { type: 'or', conditions: conds };
+           } else if (allAnd) {
+              blockJson = { type: 'and', conditions: conds };
+           } else {
+              const andGroups: any[][] = [];
+              let currentGroup: any[] = [conds[0]];
+              for (let i = 0; i < ops.length; i++) {
+                 if (ops[i] === 'and') {
+                    andGroups.push(currentGroup);
+                    currentGroup = [conds[i + 1]];
+                 } else {
+                    currentGroup.push(conds[i + 1]);
+                 }
+              }
+              andGroups.push(currentGroup);
+              const andConditions = andGroups.map(group =>
+                 group.length === 1 ? group[0] : { type: 'or', conditions: group }
+              );
+              blockJson = { type: 'and', conditions: andConditions };
+           }
+        }
 
        if (g.sourceId) {
           return { type: 'and', conditions: [{ type: 'source', value: g.sourceId }, blockJson], _afterOperator: g.afterOperator || 'and' };
@@ -301,7 +324,15 @@ export function RulesScreen() {
        // Determine top-level join operator from the blocks' afterOperators
        const blockOps = cleanGroups.slice(0, -1).map((g: any) => g._afterOperator || 'and');
        const topJoinType = blockOps.includes('or') && !blockOps.includes('and') ? 'or' : 'and';
-       const cleanConds = cleanGroups.map(({ _afterOperator, ...rest }: any) => rest);
+       // IMPORTANT: wrap any leaf block (single condition not in a logical node) so that
+       // all top-level children are always logical nodes. This makes the format unambiguous
+       // on reload — "multiple blocks" always means ALL direct children are logical nodes.
+       const cleanConds = cleanGroups.map(({ _afterOperator, ...rest }: any) => {
+          if (rest.type !== 'and' && rest.type !== 'or') {
+             return { type: 'or', conditions: [rest] };
+          }
+          return rest;
+       });
        finalJson = { type: topJoinType, conditions: cleanConds };
     }
 
