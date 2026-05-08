@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, NavLink, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { LayoutDashboard, Receipt, Tags, Network, Wallet, Database, Activity, ShieldAlert, UploadCloud, TableProperties, LayoutTemplate, BookMarked, FolderGit2 } from 'lucide-react';
+import { LayoutDashboard, Receipt, Tags, Network, Wallet, Database, Activity, ShieldAlert, UploadCloud, TableProperties, LayoutTemplate, BookMarked, FolderGit2, Pin, PinOff } from 'lucide-react';
 import { TransactionsScreen } from './features/transactions/TransactionsScreen';
 import { CategoryManagementScreen } from './features/categories/CategoryManagementScreen';
 import { MappingRulesScreen } from './features/mappings/MappingRulesScreen';
@@ -21,6 +21,15 @@ const queryClient = new QueryClient({
 });
 
 function Sidebar({ isAdminMode, setIsAdminMode }: { isAdminMode: boolean, setIsAdminMode: (v: boolean) => void }) {
+  const [isPinned, setIsPinned] = useState(() => localStorage.getItem('financeTracker_sidebarPinned') !== 'false');
+  const [isHovered, setIsHovered] = useState(false);
+
+  useEffect(() => {
+    localStorage.setItem('financeTracker_sidebarPinned', String(isPinned));
+  }, [isPinned]);
+
+  const expanded = isPinned || isHovered;
+
   const userLinks = [
     { to: '/dashboard', icon: <LayoutDashboard size={20} />, label: 'Dashboard' },
     { to: '/transactions', icon: <Receipt size={20} />, label: 'Transactions' },
@@ -52,62 +61,83 @@ function Sidebar({ isAdminMode, setIsAdminMode }: { isAdminMode: boolean, setIsA
   const links = isAdminMode ? adminLinks : userLinks;
 
   return (
-    <div className="w-64 bg-slate-900 text-slate-300 flex flex-col h-screen shrink-0 shadow-xl z-20 transition-all">
-      <div className="p-6 border-b border-slate-800">
-        <h1 className="text-xl font-bold text-white tracking-tight flex items-center gap-3">
-          <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-white shadow-inner transition-colors duration-300 ${isAdminMode ? 'bg-purple-600' : 'bg-blue-600'}`}>
+    <div 
+      className={`${expanded ? 'w-64' : 'w-20'} bg-slate-900 text-slate-300 flex flex-col h-screen shrink-0 shadow-xl z-20 transition-all duration-300 relative group`}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+    >
+      <div className={`p-4 border-b border-slate-800 flex items-center ${expanded ? 'justify-between' : 'justify-center'}`}>
+        <div className="flex items-center gap-3 overflow-hidden whitespace-nowrap">
+          <div className={`shrink-0 w-10 h-10 rounded-xl flex items-center justify-center text-white shadow-inner transition-colors duration-300 ${isAdminMode ? 'bg-purple-600' : 'bg-blue-600'}`}>
             {isAdminMode ? <ShieldAlert size={20} /> : <Wallet size={20} />}
           </div>
-          FinanceTracker
-        </h1>
+          {expanded && <h1 className="text-xl font-bold text-white tracking-tight">FinanceTracker</h1>}
+        </div>
+        {expanded && (
+          <button 
+            onClick={() => setIsPinned(!isPinned)}
+            className="text-slate-500 hover:text-white transition-colors p-1"
+            title={isPinned ? "Unpin Sidebar" : "Pin Sidebar"}
+          >
+            {isPinned ? <Pin size={18} className="text-blue-400 fill-current" /> : <PinOff size={18} />}
+          </button>
+        )}
       </div>
       
-      <div className="px-5 pt-5 pb-2 text-xs font-bold text-slate-500 uppercase tracking-wider">
+      <div className={`px-5 pt-5 pb-2 text-xs font-bold text-slate-500 uppercase tracking-wider overflow-hidden whitespace-nowrap transition-all duration-200 ${expanded ? 'opacity-100' : 'opacity-0 h-0 py-0 m-0'}`}>
         {isAdminMode ? 'System Administration' : 'User Platform'}
       </div>
 
-      <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
+      <nav className={`flex-1 overflow-y-auto space-y-2 ${expanded ? 'p-4' : 'p-2'}`}>
         {links.map(link => (
           <NavLink 
             key={link.to} 
             to={link.to} 
-            className={({ isActive }) => `flex items-center gap-3 px-4 py-3 rounded-lg font-medium transition-all duration-200 ${isActive ? (isAdminMode ? 'bg-purple-600 text-white shadow-md' : 'bg-blue-600 text-white shadow-md') : 'hover:bg-slate-800 hover:text-white'}`}
+            title={!expanded ? link.label : undefined}
+            className={({ isActive }) => `flex items-center gap-3 py-3 rounded-lg font-medium transition-all duration-200 overflow-hidden whitespace-nowrap ${isActive ? (isAdminMode ? 'bg-purple-600 text-white shadow-md' : 'bg-blue-600 text-white shadow-md') : 'hover:bg-slate-800 hover:text-white'} ${expanded ? 'px-4' : 'px-0 justify-center'}`}
           >
-            {link.icon}
-            {link.label}
+            <div className="shrink-0">{link.icon}</div>
+            {expanded && <span>{link.label}</span>}
           </NavLink>
         ))}
         {isAdminMode && (
-          <div className="mt-6 border-t border-slate-800/50 pt-4">
-            <div className="px-4 py-2 text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2 mb-2">
+          <div className={`border-t border-slate-800/50 pt-4 ${expanded ? 'mt-6' : 'mt-4'}`}>
+            <div className={`px-4 py-2 text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2 mb-2 overflow-hidden whitespace-nowrap transition-all duration-200 ${expanded ? 'opacity-100' : 'opacity-0 h-0 py-0 my-0'}`}>
               <TableProperties size={14} /> System Tables
             </div>
-            {sysTableLinks.map(link => (
+            {expanded ? sysTableLinks.map(link => (
               <NavLink
                 key={link.to}
                 to={link.to}
-                className={({ isActive }) => `flex items-center gap-3 px-4 py-2.5 mx-1 rounded-lg text-sm font-medium transition-all duration-200 ${isActive ? 'bg-purple-900/40 text-purple-300 pointer-events-none ring-1 ring-purple-700/50' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'}`}
+                className={({ isActive }) => `flex items-center gap-3 px-4 py-2.5 mx-1 rounded-lg text-sm font-medium transition-all duration-200 overflow-hidden whitespace-nowrap ${isActive ? 'bg-purple-900/40 text-purple-300 pointer-events-none ring-1 ring-purple-700/50' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'}`}
               >
-                <div className={`w-1.5 h-1.5 rounded-full ${link.to.includes('sys_') ? 'bg-slate-700' : 'bg-transparent'}`}></div>
+                <div className={`shrink-0 w-1.5 h-1.5 rounded-full ${link.to.includes('sys_') ? 'bg-slate-700' : 'bg-transparent'}`}></div>
                 <span className="truncate">{link.label}</span>
               </NavLink>
-            ))}
+            )) : (
+              <div className="flex justify-center" title="System Tables">
+                <TableProperties size={20} className="text-slate-600" />
+              </div>
+            )}
           </div>
         )}
       </nav>
       
-      <div className="p-4 border-t border-slate-800">
+      <div className={`border-t border-slate-800 ${expanded ? 'p-4' : 'p-2'}`}>
         <button 
           onClick={() => setIsAdminMode(!isAdminMode)}
-          className={`w-full flex items-center justify-between px-4 py-3 rounded-xl font-medium transition-all duration-200 ${isAdminMode ? 'bg-purple-900/40 text-purple-300 hover:bg-purple-900/60 ring-1 ring-purple-700/50' : 'bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white'}`}
+          title={!expanded ? (isAdminMode ? "Exit Admin Mode" : "Enter Admin Mode") : undefined}
+          className={`w-full flex items-center rounded-xl font-medium transition-all duration-200 ${expanded ? 'px-4 py-3 justify-between' : 'py-3 justify-center'} ${isAdminMode ? 'bg-purple-900/40 text-purple-300 hover:bg-purple-900/60 ring-1 ring-purple-700/50' : 'bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white'}`}
         >
-          <span className="flex items-center gap-2">
+          <span className="flex items-center gap-2 shrink-0">
             <ShieldAlert size={18} className={isAdminMode ? 'text-purple-400' : 'text-slate-500'} />
-            Admin Mode
+            {expanded && "Admin Mode"}
           </span>
-          <div className={`w-9 h-5 rounded-full relative transition-colors duration-300 ${isAdminMode ? 'bg-purple-500' : 'bg-slate-700'}`}>
-            <div className={`w-3.5 h-3.5 bg-white rounded-full absolute top-[3px] transition-all duration-300 ${isAdminMode ? 'left-[19px]' : 'left-1'}`}></div>
-          </div>
+          {expanded && (
+            <div className={`shrink-0 w-9 h-5 rounded-full relative transition-colors duration-300 ${isAdminMode ? 'bg-purple-500' : 'bg-slate-700'}`}>
+              <div className={`w-3.5 h-3.5 bg-white rounded-full absolute top-[3px] transition-all duration-300 ${isAdminMode ? 'left-[19px]' : 'left-1'}`}></div>
+            </div>
+          )}
         </button>
       </div>
     </div>
