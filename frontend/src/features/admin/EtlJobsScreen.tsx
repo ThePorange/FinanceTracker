@@ -68,9 +68,9 @@ function EtlJobDetailsDrawer({ jobId, onClose }: { jobId: number | null; onClose
       ) : job ? (
         <div className="p-6 space-y-8">
           <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200 flex items-center gap-4 shadow-inner">
-            {job.status === 'success' ? (
+            {job.status?.toLowerCase() === 'success' ? (
               <div className="bg-emerald-100 p-2 rounded-xl text-emerald-600"><CheckCircle2 size={24} /></div>
-            ) : job.status === 'failed' ? (
+            ) : job.status?.toLowerCase() === 'failed' ? (
               <div className="bg-red-100 p-2 rounded-xl text-red-600"><AlertCircle size={24} /></div>
             ) : (
               <div className="bg-blue-100 p-2 rounded-xl text-blue-600"><Activity size={24} className="animate-spin" /></div>
@@ -135,8 +135,8 @@ export function EtlJobsScreen() {
         <span className={`font-mono text-xs ${isDeleted ? 'text-slate-300' : 'text-slate-500'}`}>LOG_{j.id}</span>,
         <span className={`font-semibold tracking-tight ${isDeleted ? 'text-slate-400' : 'text-slate-800'}`}>{j.name}</span>,
         <span className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider shadow-sm border ${
-          j.status === 'success' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-          j.status === 'failed' ? 'bg-red-50 text-red-700 border-red-200' :
+          j.status?.toLowerCase() === 'success' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+          j.status?.toLowerCase() === 'failed' ? 'bg-red-50 text-red-700 border-red-200' :
           isDeleted ? 'bg-slate-100 text-slate-500 border-slate-200' :
           'bg-blue-50 text-blue-700 border-blue-200'
         }`}>
@@ -145,7 +145,7 @@ export function EtlJobsScreen() {
         <span className={`${isDeleted ? 'text-slate-300' : 'text-slate-500'} text-sm font-medium`}>{new Date(j.startedAt).toLocaleString()}</span>,
         <span className={`${isDeleted ? 'text-slate-300' : 'text-slate-500'} text-sm font-medium`}>{new Date(j.completedAt).toLocaleString()}</span>,
         <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-           {!isDeleted && j.status === 'success' && (
+           {!isDeleted && j.status?.toLowerCase() === 'success' && (
              <button 
                onClick={() => setDeletingJob(j)}
                className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all"

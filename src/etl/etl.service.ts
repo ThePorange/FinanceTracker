@@ -338,7 +338,7 @@ export class EtlService {
         }
       }
       
-      db.prepare('UPDATE sys_import_log SET import_log_json = ? WHERE sys_import_log_id = ?').run(JSON.stringify({ status: 'Success' }), logId);
+      db.prepare('UPDATE sys_import_log SET import_log_json = ? WHERE sys_import_log_id = ?').run(JSON.stringify({ status: 'success' }), logId);
     });
     
       runEtl();
