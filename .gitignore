@@ -137,4 +137,5 @@ docs/*
 *.bak
 *.sql.gz
 *.sql.zip
+db/*.zip
 
