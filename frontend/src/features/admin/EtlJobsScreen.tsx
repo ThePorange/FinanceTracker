@@ -1,8 +1,60 @@
 import { useState } from 'react';
-import { useEtlJobs, useRunEtlJob, useEtlJobDetails } from './useEtlJobs';
+import { useEtlJobs, useRunEtlJob, useEtlJobDetails, useDeleteEtlJob } from './useEtlJobs';
 import { DataTable } from '../../components/shared/DataTable';
 import { Drawer } from '../../components/shared/Drawer';
-import { Play, Activity, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { Play, Activity, AlertCircle, CheckCircle2, Trash2, RotateCcw } from 'lucide-react';
+
+function DeleteConfirmationModal({ isOpen, onClose, onConfirm, jobName }: { isOpen: boolean; onClose: () => void; onConfirm: () => void; jobName: string }) {
+  const [confirmText, setConfirmText] = useState('');
+  const isMatch = confirmText === 'Delete data';
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+      <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 max-w-md w-full overflow-hidden animate-in zoom-in-95 duration-200">
+        <div className="p-8">
+          <div className="bg-red-50 w-16 h-16 rounded-2xl flex items-center justify-center text-red-600 mb-6 shadow-inner border border-red-100">
+            <Trash2 size={32} />
+          </div>
+          
+          <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Rollback Import?</h2>
+          <p className="text-slate-500 mt-3 text-sm leading-relaxed font-medium">
+            This will permanently delete all transaction data associated with <span className="text-slate-900 font-bold">"{jobName}"</span>. This action cannot be undone.
+          </p>
+
+          <div className="mt-8 space-y-4">
+            <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest">Type "Delete data" to confirm</label>
+            <input 
+              type="text"
+              autoFocus
+              value={confirmText}
+              onChange={(e) => setConfirmText(e.target.value)}
+              placeholder="Delete data"
+              className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold focus:outline-none focus:ring-4 focus:ring-red-500/10 focus:border-red-500 transition-all placeholder:text-slate-300"
+            />
+          </div>
+        </div>
+
+        <div className="bg-slate-50 p-6 flex gap-3 border-t border-slate-100">
+          <button 
+            onClick={onClose}
+            className="flex-1 px-6 py-3.5 rounded-2xl font-bold text-slate-600 hover:bg-slate-200 transition-colors text-sm"
+          >
+            Cancel
+          </button>
+          <button 
+            disabled={!isMatch}
+            onClick={() => { onConfirm(); setConfirmText(''); }}
+            className="flex-1 px-6 py-3.5 rounded-2xl font-bold bg-red-600 text-white hover:bg-red-700 shadow-lg shadow-red-600/20 disabled:opacity-30 disabled:shadow-none transition-all text-sm"
+          >
+            Confirm Delete
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function EtlJobDetailsDrawer({ jobId, onClose }: { jobId: number | null; onClose: () => void }) {
   const { data: job, isLoading } = useEtlJobDetails(jobId);
@@ -68,26 +120,51 @@ function EtlJobDetailsDrawer({ jobId, onClose }: { jobId: number | null; onClose
 export function EtlJobsScreen() {
   const { data: jobs, isLoading } = useEtlJobs();
   const runMutation = useRunEtlJob();
+  const deleteMutation = useDeleteEtlJob();
   const [selectedJob, setSelectedJob] = useState<number | null>(null);
+  const [deletingJob, setDeletingJob] = useState<any | null>(null);
 
-  const headers = ['Execution ID', 'Designation Target', 'Runtime Status', 'Started At', 'Completed At'];
+  const headers = ['Execution ID', 'Designation Target', 'Runtime Status', 'Started At', 'Completed At', 'Actions'];
 
-  const rows = (jobs || []).map((j: any) => ({
-    cells: [
-      <span className="font-mono text-xs text-slate-500">LOG_{j.id}</span>,
-      <span className="font-semibold text-slate-800 tracking-tight">{j.name}</span>,
-      <span className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider shadow-sm border ${
-        j.status === 'success' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-        j.status === 'failed' ? 'bg-red-50 text-red-700 border-red-200' :
-        'bg-blue-50 text-blue-700 border-blue-200'
-      }`}>
-        {j.status}
-      </span>,
-      <span className="text-slate-500 text-sm font-medium">{new Date(j.startedAt).toLocaleString()}</span>,
-      <span className="text-slate-500 text-sm font-medium">{new Date(j.completedAt).toLocaleString()}</span>
-    ],
-    onClick: () => setSelectedJob(j.id)
-  }));
+  const rows = (jobs || []).map((j: any) => {
+    const isDeleted = j.status === 'Deleted';
+
+    return {
+      id: j.id,
+      cells: [
+        <span className={`font-mono text-xs ${isDeleted ? 'text-slate-300' : 'text-slate-500'}`}>LOG_{j.id}</span>,
+        <span className={`font-semibold tracking-tight ${isDeleted ? 'text-slate-400' : 'text-slate-800'}`}>{j.name}</span>,
+        <span className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider shadow-sm border ${
+          j.status === 'success' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+          j.status === 'failed' ? 'bg-red-50 text-red-700 border-red-200' :
+          isDeleted ? 'bg-slate-100 text-slate-500 border-slate-200' :
+          'bg-blue-50 text-blue-700 border-blue-200'
+        }`}>
+          {j.status}
+        </span>,
+        <span className={`${isDeleted ? 'text-slate-300' : 'text-slate-500'} text-sm font-medium`}>{new Date(j.startedAt).toLocaleString()}</span>,
+        <span className={`${isDeleted ? 'text-slate-300' : 'text-slate-500'} text-sm font-medium`}>{new Date(j.completedAt).toLocaleString()}</span>,
+        <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+           {!isDeleted && j.status === 'success' && (
+             <button 
+               onClick={() => setDeletingJob(j)}
+               className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all"
+               title="Rollback Import"
+             >
+               <Trash2 size={18} />
+             </button>
+           )}
+           {isDeleted && (
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter flex items-center gap-1">
+                 <RotateCcw size={10} /> Rolled Back
+              </span>
+           )}
+        </div>
+      ],
+      onClick: () => setSelectedJob(j.id),
+      isDeleted
+    };
+  });
 
   return (
     <div className="p-8 max-w-7xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -128,6 +205,18 @@ export function EtlJobsScreen() {
       </div>
 
       <EtlJobDetailsDrawer jobId={selectedJob} onClose={() => setSelectedJob(null)} />
+      
+      <DeleteConfirmationModal 
+        isOpen={!!deletingJob}
+        onClose={() => setDeletingJob(null)}
+        jobName={deletingJob?.name || ''}
+        onConfirm={() => {
+          if (deletingJob) {
+            deleteMutation.mutate(deletingJob.id);
+            setDeletingJob(null);
+          }
+        }}
+      />
     </div>
   );
 }

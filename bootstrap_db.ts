@@ -2,9 +2,9 @@ import fs from 'fs';
 import path from 'path';
 import sqlite3 from 'sqlite3';
 
-const DB_DIR = path.join(__dirname, 'db');
+const DB_DIR = path.join(process.cwd(), 'db');
 const DB_FILE = path.join(DB_DIR, 'banking.db');
-const SCHEMA_FILE = path.join(__dirname, 'schema.sql');
+const SCHEMA_FILE = path.join(process.cwd(), 'schema.sql');
 
 async function bootstrapDb() {
   console.log('Starting DB bootstrap process...');

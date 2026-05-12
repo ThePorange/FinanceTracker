@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, ParseIntPipe } from '@nestjs/common';
+import { Controller, Get, Post, Delete, Body, Param, ParseIntPipe } from '@nestjs/common';
 import { EtlService } from './etl.service';
 
 @Controller('etl')
@@ -18,5 +18,10 @@ export class EtlJobController {
   @Get('jobs/:id')
   getJob(@Param('id', ParseIntPipe) id: number) {
     return this.etlService.getEtlJob(id);
+  }
+  
+  @Delete('jobs/:id')
+  deleteJob(@Param('id', ParseIntPipe) id: number) {
+    return this.etlService.deleteEtlJob(id);
   }
 }

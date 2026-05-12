@@ -429,4 +429,36 @@ export class EtlService {
       errorMessages: parsed.errorMessages || []
     };
   }
+
+  deleteEtlJob(id: number) {
+    const db = this.dbService.getDb();
+    const row = db.prepare('SELECT * FROM sys_import_log WHERE sys_import_log_id = ?').get(id) as any;
+    if (!row) throw new BadRequestException('Job not found');
+
+    const rollback = db.transaction(() => {
+      // 1. Delete category mappings for transactions in this import
+      db.prepare(`
+        DELETE FROM sys_transaction_category_map 
+        WHERE sys_transaction_id IN (
+          SELECT sys_transaction_id FROM sys_transaction WHERE sys_import_log_id = ?
+        )
+      `).run(id);
+
+      // 2. Delete transactions
+      db.prepare('DELETE FROM sys_transaction WHERE sys_import_log_id = ?').run(id);
+
+      // 3. Update import log status to Deleted
+      let parsed: any = {};
+      try { parsed = JSON.parse(row.import_log_json || '{}'); } catch(e) {}
+      
+      parsed.status = 'Deleted';
+      parsed.deletedAt = new Date().toISOString();
+      parsed.logs = [...(parsed.logs || []), `Job rolled back and data deleted at ${parsed.deletedAt}`];
+
+      db.prepare('UPDATE sys_import_log SET import_log_json = ? WHERE sys_import_log_id = ?').run(JSON.stringify(parsed), id);
+    });
+
+    rollback();
+    return { success: true, message: 'Import rolled back successfully' };
+  }
 }

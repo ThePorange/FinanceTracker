@@ -100,6 +100,11 @@ export const api = {
     if (!response.ok) throw new Error('Failed to fetch ETL Job details');
     return response.json();
   },
+  deleteEtlJob: async (id: number) => {
+    const response = await fetch(`${API_BASE}/etl/jobs/${id}`, { method: 'DELETE' });
+    if (!response.ok) throw new Error('Failed to delete ETL Job');
+    return response.json();
+  },
 
   // --- Data Sources (Admin) ---
   getSources: async () => {

@@ -25,3 +25,13 @@ export function useEtlJobDetails(id: number | null) {
     enabled: !!id,
   });
 }
+
+export function useDeleteEtlJob() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => api.deleteEtlJob(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['etlJobs'] });
+    },
+  });
+}
