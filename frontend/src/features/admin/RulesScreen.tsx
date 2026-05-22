@@ -185,7 +185,7 @@ export function RulesScreen() {
     };
     // Set the last existing block's afterOperator to AND before appending
     setGroups(prev => {
-      const updated = prev.map((g, i) => i === prev.length - 1 ? { ...g, afterOperator: 'and' } : g);
+      const updated = prev.map((g, i) => i === prev.length - 1 ? { ...g, afterOperator: 'and' as const } : g);
       return [...updated, clone];
     });
   };
@@ -468,8 +468,11 @@ export function RulesScreen() {
         const allUniqueChecksums = new Set([...Array.from(includeChecksums), ...Array.from(excludeChecksums)]);
         
         if (allUniqueChecksums.size > 0) {
-           const checksumList = Array.from(allUniqueChecksums).join(',');
-           const res = await fetch(`/api/transactions?limit=-1&checksums=${checksumList}`);
+           const res = await fetch(`/api/transactions/by-checksums`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ checksums: Array.from(allUniqueChecksums) })
+           });
            const json = await res.json();
            
            if (json && json.data) {
@@ -571,8 +574,11 @@ export function RulesScreen() {
 
         const txnMap = new Map();
         if (allUniqueChecksums.size > 0) {
-           const checksumList = Array.from(allUniqueChecksums).join(',');
-           const res = await fetch(`/api/transactions?limit=-1&checksums=${checksumList}`);
+           const res = await fetch(`/api/transactions/by-checksums`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ checksums: Array.from(allUniqueChecksums) })
+           });
            const json = await res.json();
            if (json && json.data) {
               json.data.forEach((t: any) => txnMap.set(t.row_checksum, t));

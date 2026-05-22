@@ -5,7 +5,7 @@ import { DatabaseService } from '../database/database.service';
 export class ReportingService {
   constructor(private readonly dbService: DatabaseService) {}
 
-  getTransactions(page: number = 1, limit: number = 50, queryFilters: Record<string, any> = {}) {
+  getTransactions(page: number = 1, limit: number = 50, queryFilters: Record<string, any> = {}): any {
     const offset = limit > 0 ? (page - 1) * limit : 0;
 
     let sql = `
@@ -62,8 +62,24 @@ export class ReportingService {
     if (queryFilters.endDate) { where.push(`COALESCE(t.transaction_date, t.posting_date, t.created_date) <= ?`); params.push(`${queryFilters.endDate} 23:59:59`); }
 
     if (queryFilters.checksums) {
-      const checksumArray = queryFilters.checksums.split(',').filter(Boolean);
+      const checksumArray = Array.isArray(queryFilters.checksums)
+        ? queryFilters.checksums
+        : queryFilters.checksums.split(',').filter(Boolean);
       if (checksumArray.length > 0) {
+        if (checksumArray.length > 500) {
+          const results = [];
+          for (let i = 0; i < checksumArray.length; i += 500) {
+            const chunk = checksumArray.slice(i, i + 500);
+            const chunkResult = this.getTransactions(page, limit, { ...queryFilters, checksums: chunk });
+            results.push(...chunkResult.data);
+          }
+          return {
+            data: results,
+            total: results.length,
+            page,
+            limit
+          };
+        }
         where.push(`t.row_checksum IN (${checksumArray.map(() => '?').join(',')})`);
         params.push(...checksumArray);
       }

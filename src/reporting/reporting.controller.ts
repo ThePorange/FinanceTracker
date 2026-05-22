@@ -1,4 +1,4 @@
-import { Controller, Get, Query, Patch, Param, Body } from '@nestjs/common';
+import { Controller, Get, Post, Query, Patch, Param, Body } from '@nestjs/common';
 import { ReportingService } from './reporting.service';
 
 @Controller('transactions')
@@ -12,8 +12,14 @@ export class ReportingController {
     return this.reportingService.getTransactions(p, l, query);
   }
 
+  @Post('by-checksums')
+  getTransactionsByChecksums(@Body() body: { checksums: string[] }) {
+    return this.reportingService.getTransactions(1, -1, { checksums: body.checksums });
+  }
+
   @Patch(':id')
   updateTransaction(@Param('id') id: string, @Body() updates: any) {
     return this.reportingService.updateTransaction(parseInt(id), updates);
   }
 }
+
