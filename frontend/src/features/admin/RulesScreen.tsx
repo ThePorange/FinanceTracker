@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { useSystemData } from './useSystemData';
 import { Input } from '../../components/shared/Input';
-import { Play, Plus, Trash2, Save, FileJson, ListChecks, Download, Copy } from 'lucide-react';
+import { Play, Plus, Trash2, Save, FileJson, ListChecks, Download, Copy, Upload } from 'lucide-react';
 import { api } from '../../services/api';
 import { TransactionSelectorModal } from './TransactionSelectorModal';
+import { RuleImportModal } from './RuleImportModal';
 
 type RuleCondition = {
   id: string; // purely for UI tracking
@@ -48,6 +49,8 @@ export function RulesScreen() {
 
   // Modal State
   const [activeSelectorCondition, setActiveSelectorCondition] = useState<{groupId: string, condId: string, type: string, checksums: string[]} | null>(null);
+  const [importRulesData, setImportRulesData] = useState<any[] | null>(null);
+  const [isImportOpen, setIsImportOpen] = useState(false);
 
   // Load into form
   const handleSelectRule = (r: any) => {
@@ -629,6 +632,49 @@ export function RulesScreen() {
      }
   };
 
+   const triggerFileSelect = () => {
+      document.getElementById('import-rules-file-input')?.click();
+   };
+
+   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = (event) => {
+         try {
+            const json = JSON.parse(event.target?.result as string);
+            let rulesToImport: any[] = [];
+            
+            if (json && Array.isArray(json.rules)) {
+               rulesToImport = json.rules;
+            } else if (json && Array.isArray(json)) {
+               rulesToImport = json;
+            } else if (json && typeof json === 'object') {
+               if (json.rule_name) {
+                  rulesToImport = [json];
+               } else {
+                  throw new Error("Invalid rules format. Could not find rule data.");
+               }
+            } else {
+               throw new Error("Invalid JSON format.");
+            }
+
+            if (rulesToImport.length === 0) {
+               alert("No valid rules found in the selected file.");
+               return;
+            }
+
+            setImportRulesData(rulesToImport);
+            setIsImportOpen(true);
+         } catch (err: any) {
+            alert(`Failed to parse file: ${err.message}`);
+         }
+         e.target.value = '';
+      };
+      reader.readAsText(file);
+   };
+
   return (
     <div className="p-6 max-w-7xl mx-auto animate-in fade-in duration-500 flex flex-col h-[calc(100vh-64px)]">
       <div className="flex justify-between items-center mb-6">
@@ -644,6 +690,20 @@ export function RulesScreen() {
              <Download className="w-4 h-4 text-gray-400" />
              Export All Rules
           </button>
+          <button 
+             onClick={triggerFileSelect}
+             className="flex items-center gap-2 bg-white border border-gray-200 text-gray-700 px-5 py-2.5 rounded-lg hover:bg-gray-50 transition shadow-sm font-medium"
+          >
+             <Upload className="w-4 h-4 text-gray-400" />
+             Import Rules
+          </button>
+          <input 
+             type="file" 
+             id="import-rules-file-input"
+             accept=".json"
+             className="hidden"
+             onChange={handleFileChange}
+          />
           <button 
              onClick={handleExecute}
              disabled={isExecuting}
@@ -940,6 +1000,21 @@ export function RulesScreen() {
            onSave={(checksums) => {
              updateCondition(activeSelectorCondition.groupId, activeSelectorCondition.condId, { checksums });
              setActiveSelectorCondition(null);
+           }}
+        />
+      )}
+
+      {isImportOpen && importRulesData && (
+        <RuleImportModal 
+           importedRules={importRulesData}
+           existingRules={rules}
+           categories={categories}
+           sources={sources}
+           refetchRules={refetchRules}
+           refetchCategories={refetchCategories}
+           onClose={() => {
+              setIsImportOpen(false);
+              setImportRulesData(null);
            }}
         />
       )}
