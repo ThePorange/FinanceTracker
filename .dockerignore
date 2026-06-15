@@ -1,0 +1,16 @@
+node_modules
+dist
+frontend/dist
+frontend/node_modules
+db
+*.sqlite
+*.db
+.git
+.gitignore
+last_error.log
+package_portable.sh
+package_portable.ps1
+start_app.sh
+start_app.ps1
+*.tar
+*App/

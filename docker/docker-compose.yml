@@ -1,0 +1,24 @@
+services:
+  backend:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: financetracker-backend
+    restart: unless-stopped
+    volumes:
+      - /volume2/financetracker/app-data:/app/db
+    environment:
+      - NODE_ENV=production
+    expose:
+      - "3000"
+
+  frontend:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.frontend
+    container_name: financetracker-frontend
+    restart: unless-stopped
+    ports:
+      - "8081:80"
+    depends_on:
+      - backend
