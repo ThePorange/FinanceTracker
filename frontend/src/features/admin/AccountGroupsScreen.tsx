@@ -1,7 +1,6 @@
-import { useState, useMemo, useEffect } from 'react';
-import { useSystemData, useCreateSystemData, useUpdateSystemData, useDeleteSystemData } from './useSystemData';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { api } from '../../services/api';
+import { useState, useEffect } from 'react';
+import { useSystemData, useCreateSystemData, useDeleteSystemData } from './useSystemData';
+import { useQueryClient } from '@tanstack/react-query';
 import { Input } from '../../components/shared/Input';
 import { Network, Plus, Save, Trash, X, Layers, CheckSquare, Square } from 'lucide-react';
 
@@ -9,10 +8,9 @@ export function AccountGroupsScreen() {
   const queryClient = useQueryClient();
   const { data: groupsData, isLoading: groupsLoading } = useSystemData('sys_account_group');
   const { data: sourcesData, isLoading: sourcesLoading } = useSystemData('sys_account_source');
-  const { data: mapsData, isLoading: mapsLoading } = useSystemData('sys_account_group_map');
+  const { data: mapsData } = useSystemData('sys_account_group_map');
 
   const createGroup = useCreateSystemData('sys_account_group');
-  const updateGroup = useUpdateSystemData('sys_account_group', 'sys_account_group_id');
   const deleteGroup = useDeleteSystemData('sys_account_group', 'sys_account_group_id');
   
   const createMap = useCreateSystemData('sys_account_group_map');

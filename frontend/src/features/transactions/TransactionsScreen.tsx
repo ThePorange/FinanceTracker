@@ -44,10 +44,10 @@ export function TransactionsScreen() {
   );
 
   const filtered = useMemo(() => {
-    let source = transactions || [];
+    let source: Transaction[] = Array.isArray(transactions) ? transactions : ((transactions as any)?.data || []);
     if (search) {
       const lower = search.toLowerCase();
-      source = source.filter(t => t.description?.toLowerCase().includes(lower));
+      source = source.filter((t: Transaction) => t.description?.toLowerCase().includes(lower));
     }
     const sorted = [...source].sort((a: any, b: any) => {
       let av = a[sortKey];

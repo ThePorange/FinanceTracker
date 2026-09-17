@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { useTransactions } from '../transactions/useTransactions';
+import type { Transaction } from '../../types';
 import { useTransactionFilters } from '../transactions/TransactionFilterContext';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line, CartesianGrid, Legend } from 'recharts';
 import { TransactionFilterPanel } from '../transactions/TransactionFilterPanel';
@@ -15,13 +16,14 @@ export function DashboardScreen() {
 
   const filteredTransactions = useMemo(() => {
     if (!transactions) return [];
-    if (!search) return transactions;
+    const txList: Transaction[] = Array.isArray(transactions) ? transactions : ((transactions as any)?.data || []);
+    if (!search) return txList;
     const lower = search.toLowerCase();
-    return transactions.filter(t => t.description?.toLowerCase().includes(lower));
+    return txList.filter((t: Transaction) => t.description?.toLowerCase().includes(lower));
   }, [transactions, search]);
 
   const { categorySpend, monthlyTrend, yoyTrend, ytdTrend, availableYears, totalCR, totalDR } = useMemo(() => {
-    if (!filteredTransactions) return { categorySpend: [], monthlyTrend: [], yoyTrend: [], ytdTrend: [], availableYears: [], totalCR: 0, totalDR: 0 };
+    if (!filteredTransactions || filteredTransactions.length === 0) return { categorySpend: [], monthlyTrend: [], yoyTrend: [], ytdTrend: [], availableYears: [], totalCR: 0, totalDR: 0 };
 
     const catMap: Record<string, { dr: number, cr: number }> = {};
     const monthMap: Record<string, { dr: number, cr: number }> = {};
@@ -34,7 +36,7 @@ export function DashboardScreen() {
     let totalCR = 0;
     let totalDR = 0;
 
-    filteredTransactions.forEach(t => {
+    filteredTransactions.forEach((t: Transaction) => {
       const cat = t.userCategory || t.autoCategory || 'Uncategorized';
       const amt = Math.abs(t.amount || 0);
 

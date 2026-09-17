@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useSystemData, useCreateSystemData, useUpdateSystemData, useDeleteSystemData } from './useSystemData';
+import { useSystemData, useCreateSystemData, useDeleteSystemData } from './useSystemData';
 import { useQueryClient } from '@tanstack/react-query';
 import { Input } from '../../components/shared/Input';
 import { FolderGit2, Plus, Save, Trash, X, Layers, CheckSquare, Square, ToggleLeft, ToggleRight } from 'lucide-react';
@@ -8,7 +8,7 @@ export function RuleGroupsScreen() {
   const queryClient = useQueryClient();
   const { data: groupsData, isLoading: groupsLoading } = useSystemData('sys_rule_group');
   const { data: rulesData, isLoading: rulesLoading } = useSystemData('sys_rules');
-  const { data: mapsData, isLoading: mapsLoading } = useSystemData('sys_rule_group_map');
+  const { data: mapsData } = useSystemData('sys_rule_group_map');
 
   const createGroup = useCreateSystemData('sys_rule_group');
   const deleteGroup = useDeleteSystemData('sys_rule_group', 'sys_rule_group_id');

@@ -44,11 +44,12 @@ export function TransactionSelectorModal({ onClose, onSave, initialChecksums = [
   );
 
   useEffect(() => {
-    if (preSelectedTransactions && preSelectedTransactions.length > 0) {
+    const list: Transaction[] = Array.isArray(preSelectedTransactions) ? preSelectedTransactions : ((preSelectedTransactions as any)?.data || []);
+    if (list && list.length > 0) {
       setSelectedMap(prev => {
         const nextMap = new Map(prev);
         let changed = false;
-        preSelectedTransactions.forEach((t: Transaction) => {
+        list.forEach((t: Transaction) => {
           if (t.row_checksum && nextMap.has(t.row_checksum)) {
             const existing = nextMap.get(t.row_checksum);
             if (existing && existing.amount === 0 && existing.description === 'Pre-selected Transaction') {
@@ -63,13 +64,13 @@ export function TransactionSelectorModal({ onClose, onSave, initialChecksums = [
   }, [preSelectedTransactions]);
 
   const filtered = useMemo(() => {
-    let source = transactions || [];
+    let source: Transaction[] = Array.isArray(transactions) ? transactions : ((transactions as any)?.data || []);
     if (showSelectedOnly) {
       source = Array.from(selectedMap.values());
     }
     if (search) {
       const lower = search.toLowerCase();
-      source = source.filter(t => t.description?.toLowerCase().includes(lower));
+      source = source.filter((t: Transaction) => t.description?.toLowerCase().includes(lower));
     }
     // Sort
     const sorted = [...source].sort((a: any, b: any) => {

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Filter, ChevronDown, ChevronUp, X } from 'lucide-react';
+import { Filter, ChevronDown, ChevronUp } from 'lucide-react';
 import { useSystemData } from '../admin/useSystemData';
 
 interface TransactionFilterPanelProps {
