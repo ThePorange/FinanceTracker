@@ -258,5 +258,51 @@ export const api = {
     const response = await fetch(`${API_BASE}/config/meta/schema/${tableName}`);
     if (!response.ok) throw new Error(`Failed to fetch schema for ${tableName}`);
     return response.json();
+  },
+
+  // --- Reporting & Report Builder ---
+  getReportDefinitions: async () => {
+    const response = await fetch(`${API_BASE}/reporting/definitions`);
+    if (!response.ok) throw new Error('Failed to fetch report definitions');
+    return response.json();
+  },
+  createReportDefinition: async (data: { report_name: string; chart_type: string; definition_json: any }) => {
+    const response = await fetch(`${API_BASE}/reporting/definitions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (!response.ok) throw new Error('Failed to create report definition');
+    return response.json();
+  },
+  updateReportDefinition: async (id: number, data: { report_name: string; chart_type: string; definition_json: any }) => {
+    const response = await fetch(`${API_BASE}/reporting/definitions/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (!response.ok) throw new Error('Failed to update report definition');
+    return response.json();
+  },
+  deleteReportDefinition: async (id: number) => {
+    const response = await fetch(`${API_BASE}/reporting/definitions/${id}`, {
+      method: 'DELETE',
+    });
+    if (!response.ok) throw new Error('Failed to delete report definition');
+    return response.json();
+  },
+  evaluateReport: async (data: {
+    series: Array<{ id: string; name: string; filters: Array<Record<string, any>> }>;
+    interval?: 'monthly' | 'daily' | 'yearly' | 'comparative_monthly';
+    amountMode?: 'net' | 'dr' | 'cr';
+  }) => {
+    const response = await fetch(`${API_BASE}/reporting/evaluate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (!response.ok) throw new Error('Failed to evaluate report');
+    return response.json();
   }
 };
+

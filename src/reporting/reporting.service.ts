@@ -1,9 +1,27 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, OnModuleInit } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
 
 @Injectable()
-export class ReportingService {
+export class ReportingService implements OnModuleInit {
   constructor(private readonly dbService: DatabaseService) {}
+
+  onModuleInit() {
+    this.ensureTablesExist();
+  }
+
+  private ensureTablesExist() {
+    const db = this.dbService.getDb();
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS sys_report_definition (
+          sys_report_definition_id INTEGER PRIMARY KEY,
+          report_name VARCHAR(250) NOT NULL UNIQUE,
+          chart_type VARCHAR(50) NOT NULL DEFAULT 'line',
+          definition_json TEXT NOT NULL,
+          created_date DATE DEFAULT CURRENT_TIMESTAMP,
+          updated_date DATE DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+  }
 
   getTransactions(page: number = 1, limit: number = 50, queryFilters: Record<string, any> = {}): any {
     const offset = limit > 0 ? (page - 1) * limit : 0;
@@ -39,7 +57,6 @@ export class ReportingService {
     if (queryFilters.groupId) params.push(queryFilters.groupId);
 
     if (queryFilters.ruleGroupId) {
-      // Include transactions mapped to the rule group where exclude_rules = 0
       where.push(`t.sys_transaction_id IN (
           SELECT map.sys_transaction_id
           FROM sys_transaction_category_map map
@@ -48,7 +65,6 @@ export class ReportingService {
       )`);
       params.push(queryFilters.ruleGroupId);
 
-      // Exclude transactions mapped to the rule group where exclude_rules = 1
       where.push(`t.sys_transaction_id NOT IN (
           SELECT map.sys_transaction_id
           FROM sys_transaction_category_map map
@@ -147,7 +163,6 @@ export class ReportingService {
         cat = { sys_transaction_category_id: res.lastInsertRowid };
       }
 
-      // Remove existing manual categorization if any
       db.prepare('DELETE FROM sys_transaction_category_map WHERE sys_transaction_id = ? AND is_auto = 0').run(id);
 
       if (cat) {
@@ -157,4 +172,235 @@ export class ReportingService {
 
     return { success: true };
   }
+
+  // Report Definitions CRUD
+  getReportDefinitions() {
+    this.ensureTablesExist();
+    return this.dbService.getDb().prepare('SELECT * FROM sys_report_definition ORDER BY updated_date DESC').all();
+  }
+
+  getReportDefinitionById(id: number) {
+    this.ensureTablesExist();
+    return this.dbService.getDb().prepare('SELECT * FROM sys_report_definition WHERE sys_report_definition_id = ?').get(id);
+  }
+
+  createReportDefinition(report_name: string, chart_type: string, definition_json: string) {
+    this.ensureTablesExist();
+    const db = this.dbService.getDb();
+    const result = db.prepare(`
+      INSERT INTO sys_report_definition (report_name, chart_type, definition_json, updated_date)
+      VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+    `).run(report_name, chart_type, definition_json);
+
+    return this.getReportDefinitionById(Number(result.lastInsertRowid));
+  }
+
+  updateReportDefinition(id: number, report_name: string, chart_type: string, definition_json: string) {
+    this.ensureTablesExist();
+    const db = this.dbService.getDb();
+    db.prepare(`
+      UPDATE sys_report_definition
+      SET report_name = ?, chart_type = ?, definition_json = ?, updated_date = CURRENT_TIMESTAMP
+      WHERE sys_report_definition_id = ?
+    `).run(report_name, chart_type, definition_json, id);
+
+    return this.getReportDefinitionById(id);
+  }
+
+  deleteReportDefinition(id: number) {
+    this.ensureTablesExist();
+    this.dbService.getDb().prepare('DELETE FROM sys_report_definition WHERE sys_report_definition_id = ?').run(id);
+    return { success: true, id };
+  }
+
+  // Multi-Series Dynamic Evaluation
+  evaluateReport(body: {
+    series: Array<{
+      id: string;
+      name: string;
+      filters: Array<Record<string, any>>;
+    }>;
+    interval?: 'monthly' | 'daily' | 'yearly' | 'comparative_monthly';
+    amountMode?: 'net' | 'dr' | 'cr';
+  }) {
+    const rawInterval = body.interval || 'monthly';
+    const amountMode = body.amountMode || 'net';
+    const seriesList = body.series || [];
+
+    const isMultipleSeries = seriesList.length > 1;
+    // Monthly + Multiple Data Sources = 12-month (Jan-Dec) comparative overlay
+    const isMonthlyOverlay = (rawInterval === 'monthly' || rawInterval === 'comparative_monthly') && isMultipleSeries;
+    const interval = rawInterval === 'comparative_monthly' ? 'monthly' : rawInterval;
+
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const timeSeriesMap: Record<string, Record<string, number>> = {};
+    const seriesYearsMap: Record<string, Record<string, Set<number>>> = {};
+    const seriesSummaries: Array<{ id: string; name: string; totalAmount: number; count: number }> = [];
+
+    let globalMinDate: Date | null = null;
+    let globalMaxDate: Date | null = null;
+
+    seriesList.forEach((s) => {
+      const txnMap = new Map<number, any>();
+
+      (s.filters || []).forEach((filter) => {
+        const res = this.getTransactions(1, -1, filter);
+        const list = res.data || [];
+
+        list.forEach((t: any) => {
+          if (filter.search && typeof filter.search === 'string' && filter.search.trim() !== '') {
+            const searchLower = filter.search.trim().toLowerCase();
+            if (!t.description || !t.description.toLowerCase().includes(searchLower)) {
+              return;
+            }
+          }
+          txnMap.set(t.id, t);
+        });
+      });
+
+      let seriesTotal = 0;
+      const seriesCount = txnMap.size;
+
+      txnMap.forEach((t) => {
+        const rawDate = t.date || t.posting_date || t.transaction_date;
+        if (!rawDate) return;
+        const d = new Date(rawDate);
+        if (isNaN(d.getTime())) return;
+
+        if (!globalMinDate || d < globalMinDate) globalMinDate = d;
+        if (!globalMaxDate || d > globalMaxDate) globalMaxDate = d;
+
+        const yr = d.getFullYear();
+        let timeKey = '';
+
+        if (isMonthlyOverlay) {
+          timeKey = monthNames[d.getMonth()];
+          if (!seriesYearsMap[s.name]) seriesYearsMap[s.name] = {};
+          if (!seriesYearsMap[s.name][timeKey]) seriesYearsMap[s.name][timeKey] = new Set<number>();
+          seriesYearsMap[s.name][timeKey].add(yr);
+        } else if (interval === 'daily') {
+          timeKey = d.toISOString().split('T')[0];
+        } else if (interval === 'yearly') {
+          timeKey = String(yr);
+        } else {
+          timeKey = `${yr}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        }
+
+        const rawAmt = Math.abs(t.amount || 0);
+        let calcAmt = 0;
+        if (amountMode === 'dr') {
+          calcAmt = t.drcr === 'DR' ? rawAmt : 0;
+        } else if (amountMode === 'cr') {
+          calcAmt = t.drcr === 'CR' ? rawAmt : 0;
+        } else {
+          calcAmt = t.drcr === 'CR' ? rawAmt : -rawAmt;
+        }
+
+        seriesTotal += calcAmt;
+
+        if (!timeSeriesMap[timeKey]) {
+          timeSeriesMap[timeKey] = {};
+        }
+        if (!timeSeriesMap[timeKey][s.name]) {
+          timeSeriesMap[timeKey][s.name] = 0;
+        }
+        timeSeriesMap[timeKey][s.name] += calcAmt;
+      });
+
+      seriesSummaries.push({
+        id: s.id,
+        name: s.name,
+        totalAmount: Number(Math.abs(seriesTotal).toFixed(2)),
+        count: seriesCount
+      });
+    });
+
+    let chartData: Array<Record<string, any>> = [];
+
+    if (isMonthlyOverlay) {
+      // Multiple Data Sources + Monthly: X-axis is strictly Jan to Dec (12 months)
+      chartData = monthNames.map((m) => {
+        const row: Record<string, any> = { date: m, _actualDates: {} };
+        seriesList.forEach((s) => {
+          const val = timeSeriesMap[m]?.[s.name] || 0;
+          row[s.name] = Number(Math.abs(val).toFixed(2));
+          const yearsSet = seriesYearsMap[s.name]?.[m];
+          if (yearsSet && yearsSet.size > 0) {
+            const sortedYears = Array.from(yearsSet).sort();
+            row._actualDates[s.name] = `${m} ${sortedYears.join(', ')}`;
+          } else {
+            row._actualDates[s.name] = m;
+          }
+        });
+        return row;
+      });
+    } else if (interval === 'monthly' && !isMultipleSeries && globalMinDate && globalMaxDate) {
+      // Single Data Source + Monthly: X-axis goes from month of first date to month of last date
+      const startYr = (globalMinDate as Date).getFullYear();
+      const startMo = (globalMinDate as Date).getMonth();
+      const endYr = (globalMaxDate as Date).getFullYear();
+      const endMo = (globalMaxDate as Date).getMonth();
+
+      const timeKeys: string[] = [];
+      let curYr = startYr;
+      let curMo = startMo;
+
+      while (curYr < endYr || (curYr === endYr && curMo <= endMo)) {
+        const key = `${curYr}-${String(curMo + 1).padStart(2, '0')}`;
+        timeKeys.push(key);
+        curMo++;
+        if (curMo > 11) {
+          curMo = 0;
+          curYr++;
+        }
+      }
+
+      chartData = timeKeys.map((key) => {
+        const row: Record<string, any> = { date: key, _actualDates: {} };
+        seriesList.forEach((s) => {
+          const val = timeSeriesMap[key]?.[s.name] || 0;
+          row[s.name] = Number(Math.abs(val).toFixed(2));
+          row._actualDates[s.name] = key;
+        });
+        return row;
+      });
+    } else if (interval === 'yearly' && globalMinDate && globalMaxDate) {
+      // Yearly: X-axis goes from min year to max year (e.g. 2020..2024) across all data sources
+      const startYr = (globalMinDate as Date).getFullYear();
+      const endYr = (globalMaxDate as Date).getFullYear();
+
+      const timeKeys: string[] = [];
+      for (let yr = startYr; yr <= endYr; yr++) {
+        timeKeys.push(String(yr));
+      }
+
+      chartData = timeKeys.map((key) => {
+        const row: Record<string, any> = { date: key, _actualDates: {} };
+        seriesList.forEach((s) => {
+          const val = timeSeriesMap[key]?.[s.name] || 0;
+          row[s.name] = Number(Math.abs(val).toFixed(2));
+          row._actualDates[s.name] = key;
+        });
+        return row;
+      });
+    } else {
+      // Fallback or daily: continuous sorted timeline
+      const sortedTimeKeys = Object.keys(timeSeriesMap).sort();
+      chartData = sortedTimeKeys.map((timeKey) => {
+        const row: Record<string, any> = { date: timeKey, _actualDates: {} };
+        seriesList.forEach((s) => {
+          const val = timeSeriesMap[timeKey]?.[s.name] || 0;
+          row[s.name] = Number(Math.abs(val).toFixed(2));
+          row._actualDates[s.name] = timeKey;
+        });
+        return row;
+      });
+    }
+
+    return {
+      chartData,
+      seriesSummaries
+    };
+  }
 }
+

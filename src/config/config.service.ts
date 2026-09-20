@@ -18,7 +18,8 @@ export class ConfigService {
     'sys_account_group',
     'sys_account_group_map',
     'sys_rule_group',
-    'sys_rule_group_map'
+    'sys_rule_group_map',
+    'sys_report_definition'
   ];
 
   constructor(private readonly dbService: DatabaseService) {}

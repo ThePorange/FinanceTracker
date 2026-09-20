@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, NavLink, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { LayoutDashboard, Receipt, Tags, Network, Wallet, Database, Activity, ShieldAlert, UploadCloud, TableProperties, LayoutTemplate, BookMarked, FolderGit2, Pin, PinOff } from 'lucide-react';
+import { LayoutDashboard, Receipt, BarChart3, Tags, Network, Wallet, Database, Activity, ShieldAlert, UploadCloud, TableProperties, LayoutTemplate, BookMarked, FolderGit2, Pin, PinOff } from 'lucide-react';
 import { TransactionsScreen } from './features/transactions/TransactionsScreen';
+import { ReportingScreen } from './features/reporting/ReportingScreen';
 import { CategoryManagementScreen } from './features/categories/CategoryManagementScreen';
 import { MappingRulesScreen } from './features/mappings/MappingRulesScreen';
 import { DashboardScreen } from './features/dashboard/DashboardScreen';
@@ -33,6 +34,7 @@ function Sidebar({ isAdminMode, setIsAdminMode }: { isAdminMode: boolean, setIsA
   const userLinks = [
     { to: '/dashboard', icon: <LayoutDashboard size={20} />, label: 'Dashboard' },
     { to: '/transactions', icon: <Receipt size={20} />, label: 'Transactions' },
+    { to: '/reporting', icon: <BarChart3 size={20} />, label: 'Reporting' },
     { to: '/categories', icon: <Tags size={20} />, label: 'Categories' },
     { to: '/mappings', icon: <Network size={20} />, label: 'Mapping Rules' },
     { to: '/rules', icon: <BookMarked size={20} />, label: 'Rules Engine' },
@@ -56,6 +58,7 @@ function Sidebar({ isAdminMode, setIsAdminMode }: { isAdminMode: boolean, setIsA
     { to: '/admin/tables/sys_fx_rate', label: 'FX Rates' },
     { to: '/admin/tables/sys_config', label: 'Global Properties' },
     { to: '/admin/tables/sys_staging_fields', label: 'Staged Fields' },
+    { to: '/admin/tables/sys_report_definition', label: 'Report Definitions' },
   ];
 
   const links = isAdminMode ? adminLinks : userLinks;
@@ -168,6 +171,7 @@ function App() {
                   {/* User Routes */}
                   <Route path="/dashboard" element={<DashboardScreen />} />
                   <Route path="/transactions" element={<TransactionsScreen />} />
+                  <Route path="/reporting" element={<ReportingScreen />} />
                   <Route path="/categories" element={<CategoryManagementScreen />} />
                   <Route path="/mappings" element={<MappingRulesScreen />} />
                   <Route path="/rules" element={<RulesScreen />} />

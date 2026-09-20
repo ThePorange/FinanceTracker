@@ -238,6 +238,16 @@ CREATE TABLE sys_staging_fields (
 );
 
 
+CREATE TABLE sys_report_definition (
+    sys_report_definition_id INTEGER PRIMARY KEY,
+    report_name VARCHAR(250) NOT NULL UNIQUE,
+    chart_type VARCHAR(50) NOT NULL DEFAULT 'line',
+    definition_json TEXT NOT NULL,
+    created_date DATE DEFAULT CURRENT_TIMESTAMP,
+    updated_date DATE DEFAULT CURRENT_TIMESTAMP
+);
+
+
 CREATE VIEW vw_transaction_final_category AS
 SELECT t.sys_transaction_id,
        t.description,
