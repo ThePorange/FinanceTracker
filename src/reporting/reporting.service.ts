@@ -236,6 +236,18 @@ export class ReportingService implements OnModuleInit {
     const timeSeriesMap: Record<string, Record<string, number>> = {};
     const seriesYearsMap: Record<string, Record<string, Set<number>>> = {};
     const seriesSummaries: Array<{ id: string; name: string; totalAmount: number; count: number }> = [];
+    const underlyingTransactions: Array<{
+      seriesId: string;
+      seriesName: string;
+      id: number;
+      date: string;
+      description: string;
+      amount: number;
+      drcr: string;
+      transactionType: string;
+      account: string;
+      category: string;
+    }> = [];
 
     let globalMinDate: Date | null = null;
     let globalMaxDate: Date | null = null;
@@ -269,6 +281,20 @@ export class ReportingService implements OnModuleInit {
 
         if (!globalMinDate || d < globalMinDate) globalMinDate = d;
         if (!globalMaxDate || d > globalMaxDate) globalMaxDate = d;
+
+        const cat = t.userCategory || t.autoCategory || 'Uncategorized';
+        underlyingTransactions.push({
+          seriesId: s.id,
+          seriesName: s.name,
+          id: t.id,
+          date: d.toISOString().split('T')[0],
+          description: t.description || '',
+          amount: Math.abs(t.amount || 0),
+          drcr: t.drcr || 'DR',
+          transactionType: t.transaction_type || '',
+          account: t.account || '',
+          category: cat
+        });
 
         const yr = d.getFullYear();
         let timeKey = '';
@@ -399,7 +425,8 @@ export class ReportingService implements OnModuleInit {
 
     return {
       chartData,
-      seriesSummaries
+      seriesSummaries,
+      underlyingTransactions
     };
   }
 }

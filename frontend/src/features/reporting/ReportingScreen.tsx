@@ -7,7 +7,8 @@ import {
 } from 'recharts';
 import { 
   Trash2, Download, Save, Layers, BarChart3, LineChart as LineChartIcon, AreaChart as AreaChartIcon, 
-  Sparkles, Check, RefreshCw, Filter, FolderPlus, SlidersHorizontal, Copy, ChevronDown, ChevronUp
+  Sparkles, Check, RefreshCw, Filter, FolderPlus, SlidersHorizontal, Copy, ChevronDown, ChevronUp,
+  GripVertical, PlusCircle
 } from 'lucide-react';
 import { useReportDefinitions, useSaveReportDefinition, useDeleteReportDefinition, useEvaluateReport } from './useReportDefinitions';
 import type { ReportSeries, ReportFilterBundle, SeriesSummary } from './types';
@@ -48,17 +49,45 @@ export function ReportingScreen() {
     setTimeout(() => setSaveSuccessMsg(''), 4500);
   };
 
+  // Currently active filter chip target loaded into top panel
+  const [activeFilterTarget, setActiveFilterTarget] = useState<{ seriesId: string; filterIndex: number } | null>(null);
+
   // Function to load a Data Category's filter/search criteria into top filter panel
-  const handleLoadFilterToTop = (filterBundle: ReportFilterBundle, categoryName?: string) => {
+  const handleLoadFilterToTop = (filterBundle: ReportFilterBundle, seriesId: string, filterIndex: number, categoryName?: string) => {
     if (!filterBundle) return;
     const { search: searchVal, ...restFilters } = filterBundle;
     setSearch(searchVal || '');
     setFilters(restFilters || {});
+    setActiveFilterTarget({ seriesId, filterIndex });
     
     if (categoryName) {
-      setSaveSuccessMsg(`Updated top filter & search panel to values from "${categoryName}"`);
-      setTimeout(() => setSaveSuccessMsg(''), 3500);
+      setSaveSuccessMsg(`Loaded filter criteria from "${categoryName}" into top panel.`);
+      setTimeout(() => setSaveSuccessMsg(''), 4500);
     }
+  };
+
+  // Function to update the currently loaded filter chip with top panel filter & search criteria
+  const handleUpdateLoadedFilter = () => {
+    if (!activeFilterTarget) return;
+
+    const currentBundle: ReportFilterBundle = { ...filters };
+    if (search && search.trim()) currentBundle.search = search.trim();
+
+    setSeries(prev => prev.map(s => {
+      if (s.id === activeFilterTarget.seriesId) {
+        const nextFilters = [...s.filters];
+        if (nextFilters[activeFilterTarget.filterIndex] !== undefined) {
+          nextFilters[activeFilterTarget.filterIndex] = currentBundle;
+        }
+        return { ...s, filters: nextFilters };
+      }
+      return s;
+    }));
+
+    const targetSeries = series.find(s => s.id === activeFilterTarget.seriesId);
+    const seriesName = targetSeries ? targetSeries.name : 'Data Category';
+    setSaveSuccessMsg(`Updated filter selection in "${seriesName}" with top panel criteria!`);
+    setTimeout(() => setSaveSuccessMsg(''), 4000);
   };
 
   // Currently selected report definition ID from dropdown ('new' for custom)
@@ -76,6 +105,112 @@ export function ReportingScreen() {
       filters: [{ ...filters, search }]
     }
   ]);
+
+  // Drag and Drop State for Data Categories / Filter Bundles
+  const [draggedItem, setDraggedItem] = useState<{ seriesId: string; filterIndex: number } | null>(null);
+  const [dragOverSeriesId, setDragOverSeriesId] = useState<string | null>(null);
+  const [isDragOverNewZone, setIsDragOverNewZone] = useState(false);
+
+  const handleDragStart = (e: React.DragEvent, seriesId: string, filterIndex: number) => {
+    e.dataTransfer.setData('application/json', JSON.stringify({ seriesId, filterIndex }));
+    e.dataTransfer.effectAllowed = 'move';
+    setDraggedItem({ seriesId, filterIndex });
+  };
+
+  const handleDragEnd = () => {
+    setDraggedItem(null);
+    setDragOverSeriesId(null);
+    setIsDragOverNewZone(false);
+  };
+
+  const handleDropOnSeries = (e: React.DragEvent, targetSeriesId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    let item = draggedItem;
+    if (!item) {
+      try {
+        const dataStr = e.dataTransfer.getData('application/json');
+        if (dataStr) item = JSON.parse(dataStr);
+      } catch (err) {
+        // ignore
+      }
+    }
+
+    if (!item) return;
+    const { seriesId: sourceSeriesId, filterIndex } = item;
+    if (sourceSeriesId === targetSeriesId) {
+      handleDragEnd();
+      return;
+    }
+
+    setSeries(prev => {
+      const sourceSeries = prev.find(s => s.id === sourceSeriesId);
+      if (!sourceSeries || !sourceSeries.filters[filterIndex]) return prev;
+
+      const filterToMove = sourceSeries.filters[filterIndex];
+
+      return prev.map(s => {
+        if (s.id === targetSeriesId) {
+          return { ...s, filters: [...s.filters, filterToMove] };
+        }
+        if (s.id === sourceSeriesId) {
+          const newFilters = s.filters.filter((_, idx) => idx !== filterIndex);
+          return { ...s, filters: newFilters };
+        }
+        return s;
+      }).filter(s => s.filters.length > 0);
+    });
+
+    handleDragEnd();
+  };
+
+  const handleDropOnNewSeries = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    let item = draggedItem;
+    if (!item) {
+      try {
+        const dataStr = e.dataTransfer.getData('application/json');
+        if (dataStr) item = JSON.parse(dataStr);
+      } catch (err) {
+        // ignore
+      }
+    }
+
+    if (!item) return;
+    const { seriesId: sourceSeriesId, filterIndex } = item;
+
+    setSeries(prev => {
+      const sourceSeries = prev.find(s => s.id === sourceSeriesId);
+      if (!sourceSeries || !sourceSeries.filters[filterIndex]) return prev;
+
+      const filterToMove = sourceSeries.filters[filterIndex];
+
+      // If source series only has 1 filter, dropping to blank area keeps it as standalone category
+      if (sourceSeries.filters.length === 1) {
+        return prev;
+      }
+
+      const tagText = formatFilterTag(filterToMove);
+      const newSeriesName = tagText && tagText !== 'All Unfiltered Transactions' 
+        ? (tagText.length > 25 ? tagText.substring(0, 25) + '...' : tagText)
+        : `Data Category ${prev.length + 1}`;
+      const newSeriesId = `series_${Date.now()}`;
+
+      const newSeriesList = prev.map(s => {
+        if (s.id === sourceSeriesId) {
+          return { ...s, filters: s.filters.filter((_, idx) => idx !== filterIndex) };
+        }
+        return s;
+      }).filter(s => s.filters.length > 0);
+
+      return [...newSeriesList, { id: newSeriesId, name: newSeriesName, filters: [filterToMove] }];
+    });
+
+    handleDragEnd();
+  };
 
   // Modal state for adding current filter
   const [showAddModal, setShowAddModal] = useState(false);
@@ -126,6 +261,9 @@ export function ReportingScreen() {
 
   const chartData = evaluateQuery.data?.chartData || [];
   const seriesSummaries = evaluateQuery.data?.seriesSummaries || [];
+
+  const activeTargetSeries = activeFilterTarget ? series.find(s => s.id === activeFilterTarget.seriesId) : null;
+  const activeTargetExists = !!(activeTargetSeries && activeTargetSeries.filters[activeFilterTarget!.filterIndex] !== undefined);
 
   // Helper to describe filter tags nicely
   const formatFilterTag = (f: ReportFilterBundle) => {
@@ -242,39 +380,65 @@ export function ReportingScreen() {
     }
   };
 
-  // Export dynamic report dataset to CSV
+  // Export underlying transactions dataset to CSV
   const exportReportToCsv = () => {
-    if (!chartData || chartData.length === 0) return;
+    const underlying = evaluateQuery.data?.underlyingTransactions || [];
+    if (!underlying || underlying.length === 0) {
+      alert('No underlying transactions found for the current report configuration.');
+      return;
+    }
 
-    const seriesNames = series.map(s => s.name);
-    const headers = ['Time Period (Date)', ...seriesNames, 'Total Amount'];
+    const headers = [
+      'Data Category',
+      'Transaction ID',
+      'Date',
+      'Account / Source',
+      'Description',
+      'Transaction Type',
+      'Category',
+      'Type (DR/CR)',
+      'Amount ($)'
+    ];
 
-    const rows = chartData.map((row: any) => {
-      const dateVal = row.date;
-      let total = 0;
-      const seriesValues = seriesNames.map(name => {
-        const val = Number(row[name] || 0);
-        total += val;
-        return val.toFixed(2);
-      });
-      return [dateVal, ...seriesValues, total.toFixed(2)];
+    const escapeCsvField = (val: any) => {
+      if (val === null || val === undefined) return '""';
+      const str = String(val).replace(/"/g, '""');
+      return `"${str}"`;
+    };
+
+    const rows = underlying.map((t: any) => {
+      const formattedDate = t.date ? String(t.date).split('T')[0] : '';
+      const formattedAmount = Number(t.amount || 0).toFixed(2);
+      return [
+        escapeCsvField(t.seriesName),
+        escapeCsvField(t.id),
+        escapeCsvField(formattedDate),
+        escapeCsvField(t.account),
+        escapeCsvField(t.description),
+        escapeCsvField(t.transactionType),
+        escapeCsvField(t.category),
+        escapeCsvField(t.drcr),
+        escapeCsvField(formattedAmount)
+      ].join(',');
     });
 
     const csvContent = [
-      `Report Title,${reportName}`,
-      `Chart Type,${chartType}`,
-      `Interval,${interval}`,
-      `Amount View,${amountMode}`,
+      `Report Title,${escapeCsvField(reportName)}`,
+      `Chart Type,${escapeCsvField(chartType)}`,
+      `Interval,${escapeCsvField(interval)}`,
+      `Amount View,${escapeCsvField(amountMode)}`,
+      `Total Transactions,${underlying.length}`,
       '',
       headers.join(','),
-      ...rows.map((r: any) => r.join(','))
+      ...rows
     ].join('\n');
 
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.setAttribute('download', `${reportName.toLowerCase().replace(/\s+/g, '_')}_report_${new Date().toISOString().split('T')[0]}.csv`);
+    const sanitizedTitle = reportName.toLowerCase().replace(/[^a-z0-9]/g, '_');
+    link.setAttribute('download', `${sanitizedTitle}_underlying_transactions_${new Date().toISOString().split('T')[0]}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -339,6 +503,47 @@ export function ReportingScreen() {
         onFilterChange={f => setFilters(f)}
       />
 
+      {/* Active Loaded Filter Edit Banner */}
+      {activeTargetExists && activeTargetSeries && (
+        <div className="bg-amber-50/90 border border-amber-300 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs animate-in fade-in duration-300">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center font-bold shrink-0">
+              <Sparkles size={18} />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-amber-800 uppercase tracking-wider">Loaded Filter Selection</span>
+                <span className="bg-amber-200/90 text-amber-950 text-xs font-bold px-2 py-0.5 rounded-md">
+                  {activeTargetSeries.name} (Filter #{activeFilterTarget!.filterIndex + 1})
+                </span>
+              </div>
+              <p className="text-xs text-amber-900/80 mt-0.5">
+                Adjust search query or filter values above, then click <strong>"Update Selected Filter"</strong> to apply the new criteria.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+            <button
+              type="button"
+              onClick={handleUpdateLoadedFilter}
+              className="flex items-center gap-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold px-4 py-2 rounded-xl shadow-md transition-all active:scale-95 cursor-pointer"
+            >
+              <RefreshCw size={14} />
+              Update Selected Filter
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveFilterTarget(null)}
+              className="text-amber-800 hover:text-amber-950 text-xs font-semibold px-2 py-1 rounded hover:bg-amber-100 transition-colors"
+              title="Deselect active filter editing"
+            >
+              Clear
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Report Builder Controls Bar */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden mb-6 transition-all duration-300">
         <div 
@@ -363,6 +568,21 @@ export function ReportingScreen() {
           </div>
 
           <div className="flex items-center gap-3">
+            {activeTargetExists && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleUpdateLoadedFilter();
+                }}
+                className="flex items-center gap-2 bg-amber-600 hover:bg-amber-700 text-white text-sm font-semibold px-4 py-2.5 rounded-xl shadow-md transition-all active:scale-95 animate-in fade-in duration-200"
+                title="Overwrite the selected filter chip with current top panel filter & search values"
+              >
+                <RefreshCw size={18} />
+                Update Selected Filter
+              </button>
+            )}
+
             <button
               type="button"
               onClick={(e) => {
@@ -452,11 +672,33 @@ export function ReportingScreen() {
             </div>
 
             {/* Data Categories & Series Filter Manager */}
-            <div className="space-y-4 pt-2">
-              <h3 className="text-sm font-bold text-slate-700 flex items-center gap-2">
-                <Sparkles size={16} className="text-amber-500" />
-                Configured Data Categories & Union Sources
-              </h3>
+            <div 
+              className="space-y-4 pt-2"
+              onDragOver={(e) => {
+                if (draggedItem) {
+                  e.preventDefault();
+                  setIsDragOverNewZone(true);
+                }
+              }}
+              onDragLeave={(e) => {
+                if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                  setIsDragOverNewZone(false);
+                }
+              }}
+              onDrop={handleDropOnNewSeries}
+            >
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <h3 className="text-sm font-bold text-slate-700 flex items-center gap-2">
+                  <Sparkles size={16} className="text-amber-500" />
+                  Configured Data Categories & Union Sources
+                </h3>
+                {draggedItem && (
+                  <span className="text-xs font-semibold text-blue-600 bg-blue-50 px-2.5 py-1 rounded-lg animate-pulse flex items-center gap-1.5 self-start sm:self-auto">
+                    <GripVertical size={13} />
+                    Drag to a Data Source to Union, or drop in blank area to split into a new Data Source
+                  </span>
+                )}
+              </div>
 
               {series.length === 0 ? (
                 <div className="p-8 text-center bg-slate-50 border-2 border-dashed border-slate-200 rounded-2xl text-slate-400 text-sm">
@@ -464,73 +706,164 @@ export function ReportingScreen() {
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {series.map((s, idx) => (
-                    <div key={s.id} className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3 relative group">
-                      <div className="flex items-center justify-between gap-2 border-b border-slate-200/60 pb-2">
-                        <div className="flex items-center gap-2 flex-1">
-                          <div
-                            className="w-3.5 h-3.5 rounded-full shrink-0"
-                            style={{ backgroundColor: COLORS[idx % COLORS.length] }}
-                          ></div>
-                          <input
-                            type="text"
-                            value={s.name}
-                            onChange={e => handleUpdateSeriesName(s.id, e.target.value)}
-                            className="font-bold text-slate-800 bg-transparent hover:bg-white focus:bg-white border-none rounded px-1 text-sm flex-1 focus:ring-1 focus:ring-blue-400"
-                          />
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <button
-                            type="button"
-                            onClick={() => s.filters.length > 0 && handleLoadFilterToTop(s.filters[0], s.name)}
-                            className="text-xs font-semibold text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 px-2.5 py-1 rounded-lg transition-colors flex items-center gap-1.5"
-                            title="Load this Data Category's filter/search into the top panel"
-                          >
-                            <SlidersHorizontal size={13} />
-                            Apply Filter
-                          </button>
-                          <button
-                            onClick={() => handleDeleteSeries(s.id)}
-                            className="text-slate-400 hover:text-rose-600 transition-colors p-1"
-                            title="Delete Data Category"
-                          >
-                            <Trash2 size={16} />
-                          </button>
-                        </div>
-                      </div>
+                  {series.map((s, idx) => {
+                    const isTarget = dragOverSeriesId === s.id;
+                    return (
+                      <div 
+                        key={s.id} 
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          if (draggedItem && draggedItem.seriesId !== s.id) {
+                            setDragOverSeriesId(s.id);
+                          }
+                        }}
+                        onDragLeave={(e) => {
+                          e.stopPropagation();
+                          if (dragOverSeriesId === s.id) setDragOverSeriesId(null);
+                        }}
+                        onDrop={(e) => handleDropOnSeries(e, s.id)}
+                        className={`rounded-2xl p-4 space-y-3 relative group transition-all duration-200 overflow-hidden ${
+                          isTarget
+                            ? 'bg-blue-50/90 border-2 border-blue-500 shadow-lg ring-4 ring-blue-500/20 scale-[1.01]'
+                            : 'bg-slate-50 border border-slate-200'
+                        }`}
+                      >
+                        {isTarget && (
+                          <div className="absolute inset-0 bg-blue-600/10 backdrop-blur-[1px] rounded-2xl border-2 border-dashed border-blue-500 flex items-center justify-center pointer-events-none z-20">
+                            <span className="bg-blue-600 text-white font-bold text-xs px-3 py-1.5 rounded-full shadow-lg flex items-center gap-1.5 animate-bounce">
+                              <Sparkles size={14} /> Drop here to Union into "{s.name}"
+                            </span>
+                          </div>
+                        )}
 
-                      {/* Filter bundles inside this Data Category */}
-                      <div className="space-y-2">
-                        <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">
-                          {s.filters.length > 1 ? `Union of ${s.filters.length} Filters (Click any filter chip to load into panel)` : '1 Filter Selection (Click chip to load into panel)'}
-                        </span>
-                        <div className="flex flex-wrap gap-2">
-                          {s.filters.map((f, fIdx) => (
+                        <div className="flex items-center justify-between gap-2 border-b border-slate-200/60 pb-2">
+                          <div className="flex items-center gap-2 flex-1">
                             <div
-                              key={fIdx}
-                              onClick={() => handleLoadFilterToTop(f, s.name)}
-                              className="bg-white hover:bg-blue-50 border border-slate-200 hover:border-blue-400 rounded-lg px-2.5 py-1.5 text-xs text-slate-700 hover:text-blue-900 flex items-center gap-2 shadow-2xs cursor-pointer transition-all"
-                              title="Click to update top filter & search panel to this criteria"
+                              className="w-3.5 h-3.5 rounded-full shrink-0"
+                              style={{ backgroundColor: COLORS[idx % COLORS.length] }}
+                            ></div>
+                            <input
+                              type="text"
+                              value={s.name}
+                              onChange={e => handleUpdateSeriesName(s.id, e.target.value)}
+                              className="font-bold text-slate-800 bg-transparent hover:bg-white focus:bg-white border-none rounded px-1 text-sm flex-1 focus:ring-1 focus:ring-blue-400"
+                            />
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => s.filters.length > 0 && handleLoadFilterToTop(s.filters[0], s.id, 0, s.name)}
+                              className="text-xs font-semibold text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 px-2.5 py-1 rounded-lg transition-colors flex items-center gap-1.5"
+                              title="Load this Data Category's filter/search into the top panel"
                             >
-                              <Filter size={12} className="text-blue-500 shrink-0" />
-                              <span className="truncate max-w-[200px]" title={formatFilterTag(f)}>
-                                {formatFilterTag(f)}
-                              </span>
-                              {s.filters.length > 1 && (
-                                <button
-                                  onClick={(e) => { e.stopPropagation(); handleRemoveFilterFromSeries(s.id, fIdx); }}
-                                  className="text-slate-400 hover:text-rose-500 text-sm font-bold ml-1 p-0.5"
-                                  title="Remove this filter from Union"
+                              <SlidersHorizontal size={13} />
+                              Apply Filter
+                            </button>
+                            <button
+                              onClick={() => handleDeleteSeries(s.id)}
+                              className="text-slate-400 hover:text-rose-600 transition-colors p-1"
+                              title="Delete Data Category"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Filter bundles inside this Data Category */}
+                        <div className="space-y-2">
+                          <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">
+                            {s.filters.length > 1 ? `Union of ${s.filters.length} Filters (Drag chips to combine or separate)` : '1 Filter Selection (Drag chip to combine with another source)'}
+                          </span>
+                          <div className="flex flex-wrap gap-2">
+                            {s.filters.map((f, fIdx) => {
+                              const isThisDragged = draggedItem?.seriesId === s.id && draggedItem?.filterIndex === fIdx;
+                              const isThisActive = activeFilterTarget?.seriesId === s.id && activeFilterTarget?.filterIndex === fIdx;
+                              return (
+                                <div
+                                  key={fIdx}
+                                  draggable
+                                  onDragStart={(e) => handleDragStart(e, s.id, fIdx)}
+                                  onDragEnd={handleDragEnd}
+                                  onClick={() => handleLoadFilterToTop(f, s.id, fIdx, s.name)}
+                                  className={`rounded-lg px-2.5 py-1.5 text-xs flex items-center gap-1.5 cursor-grab active:cursor-grabbing transition-all select-none ${
+                                    isThisDragged
+                                      ? 'opacity-30 border-dashed border-blue-500 scale-95 ring-2 ring-blue-400 bg-white'
+                                      : isThisActive
+                                      ? 'bg-amber-50 border-2 border-amber-500 text-amber-950 font-bold ring-2 ring-amber-400/30 shadow-xs'
+                                      : 'bg-white hover:bg-blue-50 border border-slate-200 hover:border-blue-400 text-slate-700 hover:text-blue-900 shadow-2xs'
+                                  }`}
+                                  title="Click to load into filter panel. Drag to Union or split."
                                 >
-                                  ×
-                                </button>
-                              )}
-                            </div>
-                          ))}
+                                  <GripVertical size={13} className={`shrink-0 cursor-grab ${isThisActive ? 'text-amber-600' : 'text-slate-400'}`} />
+                                  <Filter size={12} className={`shrink-0 ${isThisActive ? 'text-amber-600' : 'text-blue-500'}`} />
+                                  <span className="truncate max-w-[180px]" title={formatFilterTag(f)}>
+                                    {formatFilterTag(f)}
+                                  </span>
+
+                                  {isThisActive && (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleUpdateLoadedFilter();
+                                      }}
+                                      className="text-amber-900 hover:text-black bg-amber-200/90 hover:bg-amber-300 px-1.5 py-0.5 rounded text-[11px] font-bold transition-colors flex items-center gap-1 shrink-0 ml-0.5 shadow-2xs cursor-pointer"
+                                      title="Overwrite this filter chip with current top panel criteria"
+                                    >
+                                      <RefreshCw size={11} /> Update
+                                    </button>
+                                  )}
+
+                                  {s.filters.length > 1 && (
+                                    <button
+                                      onClick={(e) => { e.stopPropagation(); handleRemoveFilterFromSeries(s.id, fIdx); }}
+                                      className="text-slate-400 hover:text-rose-500 text-sm font-bold ml-1 p-0.5"
+                                      title="Remove this filter from Union"
+                                    >
+                                      ×
+                                    </button>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Blank Area Drop Zone indicator when dragging */}
+              {draggedItem && (
+                <div
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setIsDragOverNewZone(true);
+                  }}
+                  onDragLeave={() => setIsDragOverNewZone(false)}
+                  onDrop={handleDropOnNewSeries}
+                  className={`p-6 border-2 border-dashed rounded-2xl transition-all duration-200 flex flex-col items-center justify-center text-center gap-2 cursor-pointer ${
+                    isDragOverNewZone
+                      ? 'bg-emerald-50/90 border-emerald-500 ring-4 ring-emerald-500/20 scale-[1.01]'
+                      : 'bg-slate-50/80 border-slate-300 hover:border-slate-400'
+                  }`}
+                >
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold transition-all ${
+                    isDragOverNewZone ? 'bg-emerald-500 text-white scale-110 shadow-md' : 'bg-slate-200 text-slate-600'
+                  }`}>
+                    <PlusCircle size={20} />
+                  </div>
+                  <div>
+                    <span className={`font-bold text-sm ${isDragOverNewZone ? 'text-emerald-700' : 'text-slate-700'}`}>
+                      {isDragOverNewZone ? 'Release to Create New Data Source' : 'Drop filter chip here to split into a new Data Source'}
+                    </span>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Creates a separate Data Source category on the report chart.
+                    </p>
+                  </div>
                 </div>
               )}
             </div>
@@ -585,7 +918,7 @@ export function ReportingScreen() {
             onClick={() => {
               const target = series.find(s => s.id === sum.id);
               if (target && target.filters.length > 0) {
-                handleLoadFilterToTop(target.filters[0], target.name);
+                handleLoadFilterToTop(target.filters[0], target.id, 0, target.name);
               }
             }}
             title="Click to load filter & search criteria into top panel"
