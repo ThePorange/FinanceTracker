@@ -190,3 +190,63 @@ Add a proxy rule in your central Nginx reverse proxy to route your desired local
   proxy_pass http://$backend_host:3000;
   ```
   This allows Nginx to start up instantly, and resolve the backend container name only when a request is made.
+
+---
+
+## 6. Database Schema Update & Migration Guide (Zero Data Loss)
+
+When updating the application after making schema changes in local development (e.g., adding new tables like `sys_report_definition`, adding views, or adding columns), follow this guide to apply schema updates to the production SQLite database on your NAS **without losing any existing transaction data, rules, or categories**.
+
+### How Automatic Schema Bootstrap Works
+The `financetracker-backend` container runs `bootstrap_db.js` automatically on startup via `docker-entrypoint.sh`. 
+- `bootstrap_db.js` executes `schema.sql` using non-destructive `CREATE TABLE IF NOT EXISTS` and `CREATE VIEW IF NOT EXISTS` statements.
+- NestJS services (such as `ReportingService`) also run `ensureTablesExist()` on container startup (`onModuleInit()`), which creates any missing feature tables (e.g. `sys_report_definition`).
+
+### Recommended Zero-Data-Loss Migration Workflow
+
+#### Step 1: Backup the Production Database
+Before performing any schema updates or container restarts, create a timestamped backup copy of your live database on the NAS:
+```bash
+# Navigate to the database folder on the NAS
+cd /volume2/financetracker/app-data
+
+# Create a safety backup
+cp banking.db banking_backup_$(date +%Y%m%d_%H%M%S).db
+```
+
+#### Step 2: Apply Schema Updates
+
+Depending on the type of schema changes made in local development, choose the matching approach below:
+
+##### Scenario A: New Tables or Views (Fully Automatic)
+If your schema changes consist of new tables (e.g., `sys_report_definition`) or new views defined with `CREATE TABLE IF NOT EXISTS` or `CREATE VIEW IF NOT EXISTS`:
+1. Rebuild and deploy the new Docker images following **Section 4** (`backend.tar` / `frontend.tar`).
+2. Restart the containers on the NAS with `sudo docker compose up -d`.
+3. The startup script and NestJS module initialization will automatically create the new tables/views in `banking.db` while leaving all existing data untouched.
+
+##### Scenario B: New Columns on Existing Tables (`ALTER TABLE`)
+If you added new columns to existing populated tables (e.g. `ALTER TABLE sys_transaction ADD COLUMN ...`):
+1. **Prepare an Incremental SQL Migration Script** (e.g. `migrate_schema.sql`):
+   ```sql
+   -- Example migration statements:
+   ALTER TABLE sys_transaction ADD COLUMN notes TEXT;
+   CREATE INDEX IF NOT EXISTS idx_transaction_date ON sys_transaction(transaction_date);
+   ```
+2. **Execute the Migration on the NAS**:
+   Run the SQL commands directly against the production database using `sqlite3` inside the backend container:
+   ```bash
+   # Option 1: Execute single ALTER TABLE command
+   sudo docker exec -it financetracker-backend sqlite3 /app/db/banking.db "ALTER TABLE sys_transaction ADD COLUMN notes TEXT;"
+
+   # Option 2: Execute SQL file
+   sudo docker exec -i financetracker-backend sqlite3 /app/db/banking.db < migrate_schema.sql
+   ```
+
+#### Step 3: Verify Migration & Data Integrity
+After applying the migration:
+1. Verify that all existing records and transactions are intact:
+   ```bash
+   sudo docker exec -it financetracker-backend sqlite3 /app/db/banking.db "SELECT COUNT(*) FROM sys_transaction;"
+   ```
+2. Access the application UI via your browser (`http://<NAS_IP>:8081` or your reverse proxy domain) and verify that all screens, transactions, and reporting functions load cleanly.
+
