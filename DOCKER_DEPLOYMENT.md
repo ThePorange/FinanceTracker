@@ -71,14 +71,14 @@ All configuration files are located under the `./docker/` directory:
 
 Follow these steps to build the images on your development machine, export them, and deploy them on your NAS:
 
-### Step 1: Rebuild the Images Locally
-Open a terminal in the project root directory on your local machine and run:
+### Step 1: Rebuild the Images Locally for NAS Architecture (x86_64 / amd64)
+Open a terminal in the project root directory on your local Mac machine and run with `--platform linux/amd64` (required when building on Apple Silicon M1/M2/M3/M4 Macs for an Intel/AMD NAS):
 ```bash
-# Build the backend image (without cache to ensure native C modules compile clean)
-docker build --no-cache -t financetracker-backend:latest -f docker/Dockerfile .
+# Build the backend image for NAS target architecture (amd64)
+docker build --platform linux/amd64 --no-cache -t financetracker-backend:latest -f docker/Dockerfile .
 
-# Build the frontend image
-docker build -t financetracker-frontend:latest -f docker/Dockerfile.frontend .
+# Build the frontend image for NAS target architecture (amd64)
+docker build --platform linux/amd64 -t financetracker-frontend:latest -f docker/Dockerfile.frontend .
 ```
 
 ### Step 2: Export the Images to Tarballs
@@ -190,6 +190,18 @@ Add a proxy rule in your central Nginx reverse proxy to route your desired local
   proxy_pass http://$backend_host:3000;
   ```
   This allows Nginx to start up instantly, and resolve the backend container name only when a request is made.
+
+### C. Architecture / Platform Mismatch Warning (`requested image's platform linux/arm64 does not match detected host platform linux/amd64`)
+* **Problem:** Container startup shows a warning: `The requested image's platform (linux/arm64) does not match the detected host platform (linux/amd64/v3)`.
+* **Reason:** Building Docker images on Apple Silicon Macs (M1/M2/M3/M4) defaults to `linux/arm64`. The Ugreen DXP4800 Pro NAS runs on an Intel/AMD x86_64 architecture (`linux/amd64`).
+* **Fix:** Rebuild the images on your Mac explicitly targeting `--platform linux/amd64`:
+  ```bash
+  docker build --platform linux/amd64 --no-cache -t financetracker-backend:latest -f docker/Dockerfile .
+  docker build --platform linux/amd64 -t financetracker-frontend:latest -f docker/Dockerfile.frontend .
+  docker save -o backend.tar financetracker-backend:latest
+  docker save -o frontend.tar financetracker-frontend:latest
+  ```
+  Transfer the new `.tar` files to the NAS and run `sudo docker load -i backend.tar && sudo docker load -i frontend.tar`.
 
 ---
 

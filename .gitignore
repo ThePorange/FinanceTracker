@@ -80,8 +80,14 @@ out/
 *.db-shm
 *.old
 
-# Output of 'npm pack'
+# Compressed archives & packages
+*.tar
+*.tar.gz
 *.tgz
+*.gz
+*.zip
+*.7z
+*.rar
 
 # Yarn Integrity file
 .yarn-integrity
