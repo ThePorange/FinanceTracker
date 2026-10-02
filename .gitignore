@@ -124,6 +124,9 @@ docs/*
 # Data Imports & Exports
 *.pdf
 *.csv
+*.ofx
+*.qfx
+*.qbo
 *.xlsx
 *.xls
 *.tsv
