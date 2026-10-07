@@ -18,15 +18,38 @@ export function DataImportScreen() {
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const uploaded = e.target.files?.[0];
-    if (uploaded) setFile(uploaded);
+    if (!uploaded) return;
+
+    if (selectedSourceId) {
+      const ext = uploaded.name.toLowerCase().endsWith('.ofx') ? 'ofx' : 'csv';
+      const targetSource = activeSources.find((s: any) => s.id === Number(selectedSourceId));
+      if (targetSource && targetSource.supported_types && !targetSource.supported_types.includes(ext)) {
+        alert(`Validation Error: Account source '${targetSource.name}' does not have a ${ext.toUpperCase()} mapping configured. Please set up a ${ext.toUpperCase()} mapping for this source before importing.`);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+        setFile(null);
+        return;
+      }
+    }
+    setFile(uploaded);
   };
 
   const handleImport = async () => {
     if (!selectedSourceId || !file) return;
+
+    const ext = file.name.toLowerCase().endsWith('.ofx') ? 'ofx' : 'csv';
+    const targetSource = activeSources.find((s: any) => s.id === Number(selectedSourceId));
+    if (targetSource && targetSource.supported_types && !targetSource.supported_types.includes(ext)) {
+      alert(`Validation Error: Account source '${targetSource.name}' does not have a ${ext.toUpperCase()} mapping configured. Please set up a ${ext.toUpperCase()} mapping for this source before importing.`);
+      return;
+    }
+
     try {
-      await importMutation.mutateAsync({ sourceId: Number(selectedSourceId), file });
-      alert('Data import successfully queued inside the ETL pipeline.');
+      const res = await importMutation.mutateAsync({ sourceId: Number(selectedSourceId), file });
+      const newCount = res.newRecords !== undefined ? res.newRecords : 'N/A';
+      const ignoredCount = res.ignoredRecords !== undefined ? res.ignoredRecords : 'N/A';
+      alert(`Data import completed successfully!\n\nNew records added: ${newCount}\nDuplicate records ignored: ${ignoredCount}`);
       setFile(null);
+      if (fileInputRef.current) fileInputRef.current.value = '';
     } catch (err: any) {
       alert(`Pipeline Fault Exception Output:\n\n${err.message}`);
     }
@@ -58,7 +81,7 @@ export function DataImportScreen() {
             <UploadCloud className="text-blue-500 shadow-sm rounded-full" size={28} />
             Data Ingestion Hub
           </h1>
-          <p className="text-slate-500 mt-2 text-sm font-medium">Initiate discrete flat file extractions mapping explicit external structures natively through system pipelines.</p>
+          <p className="text-slate-500 mt-2 text-sm font-medium">Initiate discrete flat file extractions (.CSV / .OFX) mapping explicit external structures natively through system pipelines.</p>
         </div>
       </div>
 
@@ -78,7 +101,7 @@ export function DataImportScreen() {
               >
                 <option value="">-- Assign Integration Node --</option>
                 {activeSources.map((s: any) => (
-                  <option key={s.id} value={s.id}>{s.name} (ID: {s.id})</option>
+                  <option key={s.id} value={s.id}>{s.name} (ID: {s.id}) [{String(s.type).toUpperCase()}]</option>
                 ))}
               </select>
             </div>
@@ -94,12 +117,12 @@ export function DataImportScreen() {
               </h3>
               
               <p className="text-xs font-mono text-slate-500 text-center mt-2 bg-white px-2 py-1 rounded border border-slate-100 shadow-sm break-all max-w-[200px] truncate">
-                {file ? file.name : 'Click to bind .csv document'}
+                {file ? file.name : 'Click to bind .csv or .ofx document'}
               </p>
               
               <input 
                 type="file" 
-                accept=".csv" 
+                accept=".csv,.ofx" 
                 className="hidden" 
                 ref={fileInputRef} 
                 onChange={handleFileUpload} 

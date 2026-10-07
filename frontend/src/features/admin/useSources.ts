@@ -21,7 +21,7 @@ export function useCreateSource() {
 export function useSetupSource() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (data: { name: string, config: any, mappings: any[] }) => api.setupSource(data),
+    mutationFn: (data: { name: string, config: any, mappings: any[], account_source_type?: string }) => api.setupSource(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['sources'] });
     },
@@ -38,10 +38,10 @@ export function useUpdateSource() {
   });
 }
 
-export function useSourceMappings(id: number | null) {
+export function useSourceMappings(id: number | null, type?: string) {
   return useQuery({
-    queryKey: ['sources', id, 'mappings'],
-    queryFn: () => id ? api.getSourceMappings(id) : null,
+    queryKey: ['sources', id, 'mappings', type || 'all'],
+    queryFn: () => id ? api.getSourceMappings(id, type) : null,
     enabled: !!id
   });
 }
@@ -49,7 +49,7 @@ export function useSourceMappings(id: number | null) {
 export function useUpdateSourceMappings() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, data }: { id: number, data: { name: string, config?: any, mappings: any[] } }) => api.updateSourceMappings(id, data),
+    mutationFn: ({ id, data }: { id: number, data: { name: string, config?: any, mappings: any[], account_source_type?: string } }) => api.updateSourceMappings(id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['sources'] });
       // Invalidate system metadata in case staging schemas updated

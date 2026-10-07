@@ -46,7 +46,9 @@ const TRANSACTION_FIELDS = [
 export function SourceMappingWizard({ isOpen, onClose, editSourceId }: { isOpen: boolean, onClose: () => void, editSourceId?: number | null }) {
   const [step, setStep] = useState<1 | 2>(1);
   const [sourceName, setSourceName] = useState('');
+  const [formatType, setFormatType] = useState<'csv' | 'ofx'>('csv');
   const [fields, setFields] = useState<MappedField[]>([]);
+  const [initialUniqueSignature, setInitialUniqueSignature] = useState<string>('');
   const [fileName, setFileName] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [baseCurrencyId, setBaseCurrencyId] = useState<number | ''>('');
@@ -59,7 +61,7 @@ export function SourceMappingWizard({ isOpen, onClose, editSourceId }: { isOpen:
   const { data: currenciesData } = useSystemData('sys_currency');
   const currencies = useMemo(() => currenciesData?.data || currenciesData || [], [currenciesData]);
   
-  const { data: existingMappings } = useSourceMappings(editSourceId || null);
+  const { data: existingMappings } = useSourceMappings(editSourceId || null, formatType);
   const { data: sourcesObj } = useSources();
   const sourcesArr = sourcesObj?.data || sourcesObj || [];
 
@@ -78,7 +80,7 @@ export function SourceMappingWizard({ isOpen, onClose, editSourceId }: { isOpen:
   }, [transactionSchema]);
 
   useEffect(() => {
-    if (editSourceId && existingMappings && sourcesArr.length > 0) {
+    if (editSourceId && sourcesArr.length > 0) {
       const dbSource = sourcesArr.find((s: any) => s.id === editSourceId);
       if (dbSource) {
         setSourceName(dbSource.name);
@@ -86,27 +88,35 @@ export function SourceMappingWizard({ isOpen, onClose, editSourceId }: { isOpen:
         setDebitNegative(dbSource.config?.debit_negative || false);
       }
       
-      const mapsArr = existingMappings.data || existingMappings || [];
-      if (mapsArr.length > 0) {
-        setFileName('Database Configuration');
-        setFields(mapsArr.map((m: any) => ({
+      const mapsArr = existingMappings?.data || existingMappings || [];
+      if (Array.isArray(mapsArr) && mapsArr.length > 0) {
+        setFileName(`Database Configuration (${formatType.toUpperCase()})`);
+        const mappedList = mapsArr.map((m: any) => ({
           sourcefile_fieldname: m.sourcefile_fieldname,
           staging_table_fieldname: m.staging_table_fieldname,
           datatype: m.datatype,
           transaction_table_fieldname: m.transaction_table_fieldname || '',
           default_value: m.default_value || '',
-          derived_field: m.derived_field === 1 ? 'y' : 'n',
-          unique_records: m.unique_records === 1 ? 'y' : 'n'
-        })));
+          derived_field: (m.derived_field === 1 || m.derived_field === 'y') ? 'y' : 'n',
+          unique_records: (m.unique_records === 1 || m.unique_records === 'y') ? 'y' : 'n'
+        })) as MappedField[];
+
+        setFields(mappedList);
+        setInitialUniqueSignature(mappedList.map(f => `${f.staging_table_fieldname}:${f.unique_records}`).join('|'));
         setStep(2);
+      } else {
+        setFields([]);
+        setInitialUniqueSignature('');
+        setStep(1);
       }
     } else if (!editSourceId) {
       setStep(1);
       setSourceName('');
       setFields([]);
+      setInitialUniqueSignature('');
       setFileName('');
     }
-  }, [editSourceId, existingMappings, sourcesArr]);
+  }, [editSourceId, existingMappings, sourcesArr, formatType]);
 
   const filteredFields = useMemo(() => {
     if (!searchQuery) return fields;
@@ -118,9 +128,27 @@ export function SourceMappingWizard({ isOpen, onClose, editSourceId }: { isOpen:
     );
   }, [searchQuery, fields]);
 
+  const parseOfxHeaders = (content: string): string[] => {
+    const stmttrnRegex = /<STMTTRN>([\s\S]*?)(?:<\/STMTTRN>|(?=<STMTTRN>)|(?=<\/BANKTRANLIST>)|(?=<\/CCSTMTTRNRS>)|$)/gi;
+    const headerSet = new Set<string>();
+    let match: RegExpExecArray | null;
+    while ((match = stmttrnRegex.exec(content)) !== null) {
+      const block = match[1];
+      if (!block) continue;
+      const tagRegex = /<([A-Z0-9_\.\-]+)>([^<\r\n]+)/gi;
+      let tagMatch: RegExpExecArray | null;
+      while ((tagMatch = tagRegex.exec(block)) !== null) {
+        headerSet.add(tagMatch[1].trim().toUpperCase());
+      }
+    }
+    const defaultOfx = ['TRNTYPE', 'DTPOSTED', 'TRNAMT', 'FITID', 'NAME', 'MEMO', 'CHECKNUM'];
+    for (const h of defaultOfx) headerSet.add(h);
+    return Array.from(headerSet);
+  };
+
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!sourceName.trim() || !baseCurrencyId) {
-      alert("Please enter a New Institution Title and select a Base Currency before uploading a CSV target.");
+      alert("Please enter a New Institution Title and select a Base Currency before uploading an extraction target.");
       if (fileInputRef.current) fileInputRef.current.value = '';
       return;
     }
@@ -128,22 +156,33 @@ export function SourceMappingWizard({ isOpen, onClose, editSourceId }: { isOpen:
     const file = e.target.files?.[0];
     if (!file) return;
 
+    const isOfx = file.name.toLowerCase().endsWith('.ofx');
+    const detectedFormat: 'csv' | 'ofx' = isOfx ? 'ofx' : 'csv';
+    setFormatType(detectedFormat);
     setFileName(file.name);
+
     const reader = new FileReader();
     reader.onload = (event) => {
       const text = event.target?.result as string;
-      const firstLine = text.split('\n')[0];
-      const headers = firstLine.split(',').map(h => h.trim().replace(/^"|"$/g, ''));
+      let headers: string[] = [];
+
+      if (isOfx) {
+        headers = parseOfxHeaders(text);
+      } else {
+        const firstLine = text.split('\n')[0];
+        headers = firstLine.split(',').map(h => h.trim().replace(/^"|"$/g, ''));
+      }
 
       const getSuggestedMapping = (nameToTest: string) => {
         if (transactionFields.includes(nameToTest)) return nameToTest;
         const lower = nameToTest.toLowerCase();
-        if (lower.includes('date')) return lower.includes('post') ? 'posting_date' : 'transaction_date';
-        if (lower.includes('desc')) return 'description';
-        if (lower.includes('amount') || lower.includes('value')) return 'base_amount';
-        if (lower.includes('memo')) return 'memo';
-        if (lower.includes('ref')) return 'reference';
-        if (lower === 'dr' || lower === 'cr' || lower === 'type' || lower.includes('drcr')) return 'drcr';
+        if (lower.includes('date') || lower === 'dtposted') return lower.includes('post') || lower === 'dtposted' ? 'posting_date' : 'transaction_date';
+        if (lower.includes('desc') || lower === 'name') return 'description';
+        if (lower.includes('amount') || lower.includes('value') || lower === 'trnamt') return 'base_amount';
+        if (lower.includes('memo') || lower === 'memo') return 'memo';
+        if (lower.includes('ref') || lower === 'fitid') return 'reference';
+        if (lower === 'dr' || lower === 'cr' || lower === 'type' || lower === 'trntype' || lower.includes('drcr')) return 'drcr';
+        if (lower === 'checknum' || lower.includes('check')) return 'check_or_slip_number';
         if (lower.includes('cat')) return 'category_name';
         return '';
       };
@@ -155,11 +194,11 @@ export function SourceMappingWizard({ isOpen, onClose, editSourceId }: { isOpen:
         return {
           sourcefile_fieldname: h,
           staging_table_fieldname: stagingName,
-          datatype: txField.includes('date') ? 'date' : (txField === 'base_amount' ? 'real' : 'text'),
+          datatype: (txField.includes('date') || h.toLowerCase() === 'dtposted') ? 'date' : ((txField === 'base_amount' || h.toLowerCase() === 'trnamt') ? 'real' : 'text'),
           transaction_table_fieldname: txField,
           default_value: '',
           derived_field: 'n',
-          unique_records: 'n',
+          unique_records: (h.toLowerCase() === 'fitid' || txField === 'reference') ? 'y' : 'n',
         };
       });
 
@@ -181,14 +220,13 @@ export function SourceMappingWizard({ isOpen, onClose, editSourceId }: { isOpen:
       });
 
       setFields(initialFields);
+      setInitialUniqueSignature(initialFields.map(f => `${f.staging_table_fieldname}:${f.unique_records}`).join('|'));
       setStep(2);
     };
     reader.readAsText(file);
   };
 
   const updateField = (index: number, key: keyof MappedField, value: string) => {
-    // We update the original fields array based on the index in the filtered array?
-    // No, we must update by finding the exact object in the original array.
     const fieldReference = filteredFields[index];
     const originalIndex = fields.findIndex(f => f === fieldReference);
     
@@ -202,12 +240,25 @@ export function SourceMappingWizard({ isOpen, onClose, editSourceId }: { isOpen:
   const handleSave = async () => {
     if (!sourceName) return alert('Source Title is required');
     
-    const stagingTableName = fields.length > 0 && editSourceId 
-      ? existingMappings?.[0]?.staging_tablename || `staging_${sourceName.toLowerCase().replace(/[^a-z0-9]/g, '_')}`
-      : `staging_${sourceName.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
+    // Check Goal 2 validation warning: changes in unique_records
+    if (editSourceId && initialUniqueSignature) {
+      const currentUniqueSignature = fields.map(f => `${f.staging_table_fieldname}:${f.unique_records}`).join('|');
+      if (currentUniqueSignature !== initialUniqueSignature) {
+        const confirmed = window.confirm(
+          "Warning: Modifying 'Unique Records' settings will alter how transaction checksums are calculated.\n\n" +
+          "Existing transactions in the database were loaded under previous checksum rules, which may result in duplicate transactions being ingested in future imports.\n\n" +
+          "Do you wish to proceed with committing this mapping update?"
+        );
+        if (!confirmed) return;
+      }
+    }
+
+    const cleanName = sourceName.toLowerCase().replace(/[^a-z0-9]/g, '_');
+    const stagingTableName = `staging_${cleanName}_${formatType}`;
 
     try {
       const payloadMappings = fields.map(f => ({
+        account_source_type: formatType,
         staging_tablename: stagingTableName,
         sourcefile_fieldname: f.sourcefile_fieldname,
         staging_table_fieldname: f.staging_table_fieldname,
@@ -224,6 +275,7 @@ export function SourceMappingWizard({ isOpen, onClose, editSourceId }: { isOpen:
           data: { 
             name: sourceName, 
             config: { base_currency_id: baseCurrencyId, debit_negative: debitNegative },
+            account_source_type: formatType,
             mappings: payloadMappings 
           }
         });
@@ -231,6 +283,7 @@ export function SourceMappingWizard({ isOpen, onClose, editSourceId }: { isOpen:
         await setupSourceMutation.mutateAsync({
           name: sourceName,
           config: { base_currency_id: baseCurrencyId, debit_negative: debitNegative },
+          account_source_type: formatType,
           mappings: payloadMappings
         });
       }
@@ -242,7 +295,7 @@ export function SourceMappingWizard({ isOpen, onClose, editSourceId }: { isOpen:
   };
 
   return (
-    <Drawer isOpen={isOpen} onClose={onClose} title="CSV Extraction Setup Wizard" defaultWidth={900}>
+    <Drawer isOpen={isOpen} onClose={onClose} title="Extraction Target Setup Wizard (.CSV / .OFX)" defaultWidth={900}>
       {step === 1 ? (
         <div className="p-8 flex flex-col items-center justify-center min-h-[400px] space-y-8">
           <div className="w-full max-w-md flex flex-col gap-6">
@@ -252,6 +305,26 @@ export function SourceMappingWizard({ isOpen, onClose, editSourceId }: { isOpen:
               onChange={(e) => setSourceName(e.target.value)}
               placeholder="e.g. AMEX Corporate Card"
             />
+
+            <div>
+              <label className="block text-sm font-bold text-slate-700 mb-1">Target Extraction Format</label>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => setFormatType('csv')}
+                  className={`py-2 px-4 rounded-xl font-bold text-xs border transition-all ${formatType === 'csv' ? 'bg-blue-600 text-white border-blue-600 shadow-md' : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'}`}
+                >
+                  .CSV Format
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFormatType('ofx')}
+                  className={`py-2 px-4 rounded-xl font-bold text-xs border transition-all ${formatType === 'ofx' ? 'bg-blue-600 text-white border-blue-600 shadow-md' : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'}`}
+                >
+                  .OFX Format
+                </button>
+              </div>
+            </div>
             
             <div>
                <label className="block text-sm font-bold text-slate-700 mb-1">Base Currency</label>
@@ -275,13 +348,13 @@ export function SourceMappingWizard({ isOpen, onClose, editSourceId }: { isOpen:
             onClick={() => { if (!isLoadingStaging) fileInputRef.current?.click(); }}
           >
             <Upload size={40} className="text-blue-500 mb-4 group-hover:-translate-y-1 transition-transform" />
-            <h3 className="font-bold text-slate-800 text-lg">Upload Extraction Target (.CSV)</h3>
+            <h3 className="font-bold text-slate-800 text-lg">Upload Extraction Target (.CSV / .OFX)</h3>
             <p className="text-sm text-slate-500 text-center mt-2">
-              {isLoadingStaging ? 'Fetching System Pre-requisites...' : 'We will automatically parse the file headers to predict your database schema parameters natively.'}
+              {isLoadingStaging ? 'Fetching System Pre-requisites...' : 'Drop or select a .CSV or .OFX file to automatically read and map target schema fields.'}
             </p>
             <input 
               type="file" 
-              accept=".csv" 
+              accept=".csv,.ofx" 
               className="hidden" 
               ref={fileInputRef} 
               onChange={handleFileUpload} 
@@ -299,6 +372,25 @@ export function SourceMappingWizard({ isOpen, onClose, editSourceId }: { isOpen:
                 </h2>
                 <p className="text-sm text-slate-500 mt-2 font-medium">Mapped {fields.length} columns from <span className="text-blue-600 font-mono bg-blue-50 px-2 py-0.5 rounded">{fileName}</span></p>
               </div>
+
+              {editSourceId && (
+                <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-xl border border-slate-200">
+                  <button
+                    type="button"
+                    onClick={() => setFormatType('csv')}
+                    className={`px-3 py-1.5 rounded-lg font-bold text-xs transition-all ${formatType === 'csv' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
+                  >
+                    CSV Mapping
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFormatType('ofx')}
+                    className={`px-3 py-1.5 rounded-lg font-bold text-xs transition-all ${formatType === 'ofx' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
+                  >
+                    OFX Mapping
+                  </button>
+                </div>
+              )}
               <div className="relative w-full max-w-xs">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
                 <input 

@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Put, Delete, Body, Param, ParseIntPipe } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Put, Delete, Body, Param, Query, ParseIntPipe } from '@nestjs/common';
 import { SourcesService } from './sources.service';
 
 @Controller('sources')
@@ -26,8 +26,8 @@ export class SourcesController {
   }
 
   @Get(':id/mappings')
-  getSourceMappings(@Param('id', ParseIntPipe) id: number) {
-    return this.sourcesService.getSourceMappings(id);
+  getSourceMappings(@Param('id', ParseIntPipe) id: number, @Query('type') type?: string) {
+    return this.sourcesService.getSourceMappings(id, type);
   }
 
   @Put(':id/mappings')

@@ -15,3 +15,8 @@ CREATE TABLE IF NOT EXISTS sys_report_definition (
 
 -- 2. Performance Indexes (Safe / Idempotent)
 CREATE INDEX IF NOT EXISTS idx_sys_report_definition_name ON sys_report_definition(report_name);
+
+-- 3. Multi-Format Support (CSV / OFX) & Account Source Type Migrations
+-- Add account_source_type column to sys_account_mapping, sys_import_log, sys_transaction if not present
+-- Note: SQLite application runtime automatically executes column checks and table renames on startup.
+

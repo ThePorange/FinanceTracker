@@ -32,6 +32,7 @@ CREATE TABLE sys_account_group (
 CREATE TABLE sys_import_log (
     sys_import_log_id INTEGER PRIMARY KEY,
     sys_account_source_id INTEGER,
+    account_source_type VARCHAR(20) DEFAULT 'csv',
     account_source_filename VARCHAR(250) NOT NULL,
     account_source_filename_checksum VARCHAR(250) NOT NULL,
     account_source_unique_checksum VARCHAR(250) NOT NULL,
@@ -69,6 +70,7 @@ CREATE TABLE sys_transaction (
     memo VARCHAR(250),
     check_or_slip_number VARCHAR(250),
     sys_account_source_id INTEGER,
+    account_source_type VARCHAR(20) DEFAULT 'csv',
     sys_import_log_id INTEGER,
     account_source_row INTEGER NOT NULL,
     created_date DATE DEFAULT CURRENT_TIMESTAMP,
@@ -91,6 +93,7 @@ ON sys_transaction(sys_import_log_id);
 CREATE TABLE sys_account_mapping (
     sys_account_mapping_id INTEGER PRIMARY KEY,
     sys_account_source_id INTEGER,
+    account_source_type VARCHAR(20) DEFAULT 'csv',
     staging_tablename VARCHAR(250) NOT NULL,
     sourcefile_fieldname VARCHAR(250) NOT NULL,
     staging_table_fieldname VARCHAR(250) NOT NULL,

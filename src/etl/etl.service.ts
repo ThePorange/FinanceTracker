@@ -2,6 +2,7 @@ import { Injectable, BadRequestException } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
 import { RulesService } from '../rules/rules.service';
 import { parse } from 'csv-parse/sync';
+import { parseOfx } from './ofx-parser';
 import * as crypto from 'crypto';
 
 function parseDateString(dateStr: string | null): string | null {
@@ -9,6 +10,8 @@ function parseDateString(dateStr: string | null): string | null {
   let str = String(dateStr).trim();
   
   if (/^\d{8}$/.test(str)) {
+     str = `${str.slice(0,4)}-${str.slice(4,6)}-${str.slice(6,8)}`;
+  } else if (/^\d{14}$/.test(str)) {
      str = `${str.slice(0,4)}-${str.slice(4,6)}-${str.slice(6,8)}`;
   }
   
@@ -82,14 +85,23 @@ export class EtlService {
     const hash = crypto.createHash('sha256').update(fileBuffer).digest('hex');
     let generatedUniqueChecksum = 'failed-unique-' + Date.now();
     let recordsCount = 0;
+    const sourceType = filename.toLowerCase().endsWith('.ofx') ? 'ofx' : 'csv';
     
     try {
-      const records = parse(fileBuffer, { columns: true, skip_empty_lines: true, bom: true }) as Record<string, string>[];
+      let records: Record<string, string>[] = [];
+      if (sourceType === 'ofx') {
+        records = parseOfx(fileBuffer);
+      } else {
+        records = parse(fileBuffer, { columns: true, skip_empty_lines: true, bom: true }) as Record<string, string>[];
+      }
+      
       recordsCount = records.length;
-      if (!records.length) throw new BadRequestException('Empty recordset');
+      if (!records.length) throw new BadRequestException(`Empty or invalid ${sourceType.toUpperCase()} recordset`);
 
-      const mappings = db.prepare('SELECT * FROM sys_account_mapping WHERE sys_account_source_id = ?').all(accountId) as any[];
-      if (!mappings.length) throw new BadRequestException('No mappings found');
+      const mappings = db.prepare('SELECT * FROM sys_account_mapping WHERE sys_account_source_id = ? AND account_source_type = ?').all(accountId, sourceType) as any[];
+      if (!mappings.length) {
+        throw new BadRequestException(`No active ${sourceType.toUpperCase()} schema mapping found for account source ID ${accountId}. Please configure a ${sourceType.toUpperCase()} mapping first.`);
+      }
 
       const stagingTable = mappings[0].staging_tablename;
       
@@ -110,241 +122,261 @@ export class EtlService {
       }
       db.exec(`CREATE TABLE IF NOT EXISTS ${stagingTable} (id INTEGER PRIMARY KEY AUTOINCREMENT, ${stgCols.join(', ')})`);
       
+      let newRecordsCount = 0;
+      let ignoredRecordsCount = 0;
+
       const runEtl = db.transaction(() => {
-      db.exec(`DELETE FROM ${stagingTable}`); // Clear
-      
-      const stgCols = [];
-      const insertMarkers = [];
-      
-      for (const m of mappings) {
-        stgCols.push(m.staging_table_fieldname);
-        const def = String(m.default_value || '').trim();
-        let sqlDef = 'NULL';
-
-        if (def.startsWith('"') && def.endsWith('"')) {
-           sqlDef = `'${def.slice(1, -1).replace(/'/g, "''")}'`;
-        } else if (def !== '') {
-           sqlDef = def; 
-        }
-
-        const isDerived = m.derived_field === 1 || m.derived_field === 'y' || m.derived_field === true;
-        if (isDerived) {
-           insertMarkers.push(sqlDef);
-        } else {
-           if (def !== '') {
-               insertMarkers.push(`COALESCE(NULLIF(CAST(? AS TEXT), ''), (${sqlDef}))`);
-           } else {
-               insertMarkers.push(`NULLIF(CAST(? AS TEXT), '')`);
-           }
-        }
-      }
-
-      const stgInsert = db.prepare(`INSERT INTO ${stagingTable} (${stgCols.join(',')}) VALUES (${insertMarkers.join(',').replace(/\(CURRENT_TIMESTAMP\)/g, 'CURRENT_TIMESTAMP')})`);
-
-      for (const row of records) {
-        const vals = [];
+        db.exec(`DELETE FROM ${stagingTable}`); // Clear staging
+        
+        const stgCols = [];
+        const insertMarkers = [];
+        
         for (const m of mappings) {
-           const isDerived = m.derived_field === 1 || m.derived_field === 'y' || m.derived_field === true;
-           if (!isDerived) {
-               vals.push(row[m.sourcefile_fieldname] !== undefined ? String(row[m.sourcefile_fieldname]) : '');
+          stgCols.push(m.staging_table_fieldname);
+          const def = String(m.default_value || '').trim();
+          let sqlDef = 'NULL';
+
+          if (def.startsWith('"') && def.endsWith('"')) {
+             sqlDef = `'${def.slice(1, -1).replace(/'/g, "''")}'`;
+          } else if (def !== '') {
+             sqlDef = def; 
+          }
+
+          const isDerived = m.derived_field === 1 || m.derived_field === 'y' || m.derived_field === true;
+          if (isDerived) {
+             insertMarkers.push(sqlDef);
+          } else {
+             if (def !== '') {
+                 insertMarkers.push(`COALESCE(NULLIF(CAST(? AS TEXT), ''), (${sqlDef}))`);
+             } else {
+                 insertMarkers.push(`NULLIF(CAST(? AS TEXT), '')`);
+             }
+          }
+        }
+
+        const stgInsert = db.prepare(`INSERT INTO ${stagingTable} (${stgCols.join(',')}) VALUES (${insertMarkers.join(',').replace(/\(CURRENT_TIMESTAMP\)/g, 'CURRENT_TIMESTAMP')})`);
+
+        for (const row of records) {
+          const vals = [];
+          for (const m of mappings) {
+             const isDerived = m.derived_field === 1 || m.derived_field === 'y' || m.derived_field === true;
+             if (!isDerived) {
+                 vals.push(row[m.sourcefile_fieldname] !== undefined ? String(row[m.sourcefile_fieldname]) : '');
+             }
+          }
+          stgInsert.run(...vals);
+        }
+
+        const stagingData = db.prepare(`SELECT * FROM ${stagingTable}`).all() as any[];
+        const uniqueFieldsForChecksum = mappings.filter(m => m.unique_records === 1 || m.unique_records === 'y' || m.unique_records === true).map(m => m.staging_table_fieldname);
+        const uniqueKeysForAllRows = stagingData.map(row => 
+           uniqueFieldsForChecksum.map(f => String(row[f] || '')).join('|')
+        ).sort().join('||');
+        const uniqueChecksum = crypto.createHash('sha256').update(uniqueKeysForAllRows).digest('hex');
+        generatedUniqueChecksum = uniqueChecksum;
+
+        // Check for existing file level duplicates whose latest status is NOT 'Deleted'
+        const existingLogs = db.prepare(`
+          SELECT import_log_json FROM sys_import_log 
+          WHERE (account_source_unique_checksum = ? OR account_source_filename_checksum = ?) 
+          AND sys_account_source_id = ? 
+          AND (account_source_type = ? OR account_source_type IS NULL)
+        `).all(uniqueChecksum, hash, accountId, sourceType) as any[];
+
+        const isDuplicateFile = existingLogs.some(log => {
+           try {
+              const parsed = JSON.parse(log.import_log_json || '{}');
+              return parsed.status && String(parsed.status).toLowerCase() !== 'deleted';
+           } catch(e) { return false; }
+        });
+        
+        if (isDuplicateFile) {
+            throw new BadRequestException('Duplicate file detected based on unique dataset checksum rules.');
+        }
+
+        const insertImportLog = db.prepare(`
+          INSERT INTO sys_import_log (
+            sys_account_source_id, account_source_type, account_source_filename, 
+            account_source_filename_checksum, account_source_unique_checksum, 
+            account_source_row_count, import_log_json
+          ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        `);
+        const logInfo = insertImportLog.run(accountId, sourceType, filename, hash, uniqueChecksum, records.length, JSON.stringify({ status: 'Processing' }));
+        const logId = logInfo.lastInsertRowid;
+
+        let rowCount = 0;
+        const sourceRecord = db.prepare('SELECT * FROM sys_account_source WHERE sys_account_source_id = ?').get(accountId) as any;
+        const baseCurrId = sourceRecord?.base_currency_id || null;
+        const isDebitNegative = sourceRecord?.debit_negative === 1;
+
+        // Grouping Logic for "record" and "records"
+        const groupingFields = mappings.filter(m => 
+            (m.unique_records === 1 || m.unique_records === 'y' || m.unique_records === true) && 
+            (m.derived_field === 0 || m.derived_field === 'n' || m.derived_field === false)
+        ).map(m => m.staging_table_fieldname);
+
+        const groupCounts: Record<string, number> = {};
+        const currentGroupIndices: Record<string, number> = {};
+        const rowGroupIndices: { records: number, record: number }[] = new Array(stagingData.length);
+
+        for (let i = 0; i < stagingData.length; i++) {
+           const row = stagingData[i];
+           const gKey = groupingFields.length > 0 ? groupingFields.map(f => String(row[f] || '')).join('|') : 'all_sync';
+           groupCounts[gKey] = (groupCounts[gKey] || 0) + 1;
+        }
+
+        for (let i = 0; i < stagingData.length; i++) {
+           const row = stagingData[i];
+           const gKey = groupingFields.length > 0 ? groupingFields.map(f => String(row[f] || '')).join('|') : 'all_sync';
+           currentGroupIndices[gKey] = (currentGroupIndices[gKey] || 0) + 1;
+           rowGroupIndices[i] = {
+               records: groupCounts[gKey],
+               record: currentGroupIndices[gKey]
+           };
+        }
+
+        const dateFields = mappings.filter(m => ['transaction_date', 'posting_date'].includes(m.transaction_table_fieldname)).map(m => m.staging_table_fieldname);
+        for (const stgRow of stagingData) {
+           for (const df of dateFields) {
+              if (stgRow[df]) {
+                 stgRow[df] = parseDateString(stgRow[df]);
+              }
            }
         }
-        stgInsert.run(...vals);
-      }
 
-      const stagingData = db.prepare(`SELECT * FROM ${stagingTable}`).all() as any[];
-      const uniqueFieldsForChecksum = mappings.filter(m => m.unique_records === 1 || m.unique_records === 'y' || m.unique_records === true).map(m => m.staging_table_fieldname);
-      const uniqueKeysForAllRows = stagingData.map(row => 
-         uniqueFieldsForChecksum.map(f => String(row[f] || '')).join('|')
-      ).sort().join('||');
-      const uniqueChecksum = crypto.createHash('sha256').update(uniqueKeysForAllRows).digest('hex');
-      generatedUniqueChecksum = uniqueChecksum;
+        // Fetch existing row_checksum values for this source and type
+        const existingTxnRows = db.prepare(`
+          SELECT row_checksum FROM sys_transaction 
+          WHERE sys_account_source_id = ? AND account_source_type = ? AND row_checksum IS NOT NULL
+        `).all(accountId, sourceType) as any[];
+        const existingChecksumSet = new Set(existingTxnRows.map((r: any) => r.row_checksum));
 
-      const existingLogs = db.prepare('SELECT import_log_json FROM sys_import_log WHERE account_source_unique_checksum = ? AND sys_account_source_id = ?').all(uniqueChecksum, accountId) as any[];
-      const hasSuccess = existingLogs.some(log => {
-         try {
-            const parsed = JSON.parse(log.import_log_json || '{}');
-            return parsed.status === 'Success';
-         } catch(e) { return false; }
-      });
-      
-      if (hasSuccess) {
-          throw new BadRequestException('Duplicate file detected based on unique dataset checksum');
-      }
-
-      const insertImportLog = db.prepare(`INSERT INTO sys_import_log (sys_account_source_id, account_source_filename, account_source_filename_checksum, account_source_unique_checksum, account_source_row_count, import_log_json) VALUES (?, ?, ?, ?, ?, ?)`);
-      const logInfo = insertImportLog.run(accountId, filename, hash, uniqueChecksum, records.length, JSON.stringify({ status: 'Processing' }));
-      const logId = logInfo.lastInsertRowid;
-
-      let rowCount = 0;
-      const sourceRecord = db.prepare('SELECT * FROM sys_account_source WHERE sys_account_source_id = ?').get(accountId) as any;
-      const baseCurrId = sourceRecord?.base_currency_id || null;
-      const isDebitNegative = sourceRecord?.debit_negative === 1;
-
-      // Grouping Logic for "record" and "records"
-      const groupingFields = mappings.filter(m => 
-          (m.unique_records === 1 || m.unique_records === 'y' || m.unique_records === true) && 
-          (m.derived_field === 0 || m.derived_field === 'n' || m.derived_field === false)
-      ).map(m => m.staging_table_fieldname);
-
-      const groupCounts: Record<string, number> = {};
-      const currentGroupIndices: Record<string, number> = {};
-      const rowGroupIndices: { records: number, record: number }[] = new Array(stagingData.length);
-
-      for (let i = 0; i < stagingData.length; i++) {
-         const row = stagingData[i];
-         const gKey = groupingFields.length > 0 ? groupingFields.map(f => String(row[f] || '')).join('|') : 'all_sync';
-         groupCounts[gKey] = (groupCounts[gKey] || 0) + 1;
-      }
-
-      for (let i = 0; i < stagingData.length; i++) {
-         const row = stagingData[i];
-         const gKey = groupingFields.length > 0 ? groupingFields.map(f => String(row[f] || '')).join('|') : 'all_sync';
-         currentGroupIndices[gKey] = (currentGroupIndices[gKey] || 0) + 1;
-         rowGroupIndices[i] = {
-             records: groupCounts[gKey],
-             record: currentGroupIndices[gKey]
-         };
-      }
-
-      const dateFields = mappings.filter(m => ['transaction_date', 'posting_date'].includes(m.transaction_table_fieldname)).map(m => m.staging_table_fieldname);
-      for (const stgRow of stagingData) {
-         for (const df of dateFields) {
-            if (stgRow[df]) {
-               stgRow[df] = parseDateString(stgRow[df]);
-            }
-         }
-      }
-
-      for (let i = 0; i < stagingData.length; i++) {
-        const stgRow = stagingData[i];
-        // Enforce uniqueness constraints
-        const ignoredUniqueFields = ['sys_account_source_id', 'sys_import_log_id', 'account_source_row', 'base_curr_id', 'sys_transaction_type_id', 'created_date', 'drcr', 'category_name'];
-        const uniqueMaps = mappings.filter(m => 
-          m.unique_records === 1 && 
-          m.transaction_table_fieldname && 
-          m.transaction_table_fieldname !== 'n/a' &&
-          !ignoredUniqueFields.includes(m.transaction_table_fieldname)
-        );
-
-        if (uniqueMaps.length > 0) {
-          const conditions = [];
-          const params = [accountId];
+        for (let i = 0; i < stagingData.length; i++) {
+          const stgRow = stagingData[i];
+          const txnObj: Record<string, any> = { 
+            sys_account_source_id: accountId, 
+            account_source_type: sourceType,
+            sys_import_log_id: logId, 
+            account_source_row: ++rowCount 
+          };
+          let categoryName: string | null = null;
           
-          for (const um of uniqueMaps) {
-            let val = stgRow[um.staging_table_fieldname];
+          let computedRowChecksum = '';
+          const uniqueMaps = mappings.filter(um => um.unique_records === 1 || um.unique_records === 'y' || um.unique_records === true);
+          
+          if (uniqueMaps.length > 0) {
+            const uniqueValsToHash = uniqueMaps.map(um => {
+              if (um.transaction_table_fieldname === 'record') return rowGroupIndices[i].record;
+              if (um.transaction_table_fieldname === 'records') return rowGroupIndices[i].records;
+              return stgRow[um.staging_table_fieldname];
+            }).map(v => String(v || '')).join('|');
+            computedRowChecksum = crypto.createHash('sha256').update(uniqueValsToHash).digest('hex');
+          } else {
+            // Fallback unique row hash if user specified no unique fields
+            const fallbackVals = [
+              stgRow['transaction_date'] || stgRow['posting_date'] || '',
+              stgRow['base_amount'] || stgRow['amount'] || '',
+              stgRow['description'] || stgRow['memo'] || '',
+              stgRow['reference'] || stgRow['fitid'] || ''
+            ].join('|');
+            computedRowChecksum = crypto.createHash('sha256').update(fallbackVals).digest('hex');
+          }
 
-            if (um.transaction_table_fieldname === 'record') {
+          // Goal 2: Deduplicate by row_checksum - skip record if already in sys_transaction
+          if (existingChecksumSet.has(computedRowChecksum)) {
+            ignoredRecordsCount++;
+            continue;
+          }
+
+          for (const m of mappings) {
+            let val = stgRow[m.staging_table_fieldname];
+
+            if (m.transaction_table_fieldname === 'record') {
                val = rowGroupIndices[i].record;
-            } else if (um.transaction_table_fieldname === 'records') {
+            } else if (m.transaction_table_fieldname === 'records') {
                val = rowGroupIndices[i].records;
+            } else if (m.transaction_table_fieldname === 'row_checksum') {
+               val = computedRowChecksum;
             }
 
+            if (!m.transaction_table_fieldname || m.transaction_table_fieldname === 'n/a') continue;
+            
             if (val === '') val = null;
 
-            if (um.transaction_table_fieldname === 'base_amount' && val !== null) {
-               const drcrMap = mappings.find(m => m.transaction_table_fieldname === 'drcr');
-               const rawDrcr = drcrMap ? stgRow[drcrMap.staging_table_fieldname] : null;
-               val = resolveTransactionFinance(val, rawDrcr, isDebitNegative).amount;
+            if (['sys_account_source_id', 'sys_import_log_id', 'account_source_row', 'created_date'].includes(m.transaction_table_fieldname)) {
+              continue; 
             }
-            
-            conditions.push(`${um.transaction_table_fieldname} IS ?`);
-            params.push(val);
+
+            if (m.transaction_table_fieldname === 'category_name') {
+              categoryName = val;
+              continue;
+            }
+
+            if (m.transaction_table_fieldname === 'sys_transaction_type_id' || m.transaction_table_fieldname === 'transaction_type_id') {
+              val = val ? String(val) : 'Unknown';
+              let ttype = db.prepare('SELECT sys_transaction_type_id FROM sys_transaction_type WHERE transaction_type = ? AND sys_account_source_id = ?').get(val, accountId) as any;
+              if (!ttype) {
+                const res = db.prepare('INSERT INTO sys_transaction_type (transaction_type, sys_account_source_id) VALUES (?, ?)').run(val, accountId);
+                ttype = { sys_transaction_type_id: res.lastInsertRowid };
+              }
+              txnObj['sys_transaction_type_id'] = ttype.sys_transaction_type_id;
+              continue;
+            }
+
+            txnObj[m.transaction_table_fieldname] = val;
+          }
+
+          txnObj['row_checksum'] = computedRowChecksum;
+
+          if (baseCurrId) {
+            txnObj['base_curr_id'] = baseCurrId;
           }
           
-          const queryStr = `SELECT sys_transaction_id FROM sys_transaction WHERE sys_account_source_id = ? AND ${conditions.join(' AND ')} LIMIT 1`;
-          if (db.prepare(queryStr).get(...params)) {
-             const overlapDetails = uniqueMaps.map((um, idx) => `${um.transaction_table_fieldname}='${params[idx+1]}'`).join(', ');
-             throw new BadRequestException(`Duplicate record found based on composite unique constraint overlaps: [${overlapDetails}]`);
-          }
-        }
-
-        const txnObj: Record<string, any> = { sys_account_source_id: accountId, sys_import_log_id: logId, account_source_row: ++rowCount };
-        let categoryName: string | null = null;
-        
-        for (const m of mappings) {
-          let val = stgRow[m.staging_table_fieldname];
-
-          if (m.transaction_table_fieldname === 'record') {
-             val = rowGroupIndices[i].record;
-          } else if (m.transaction_table_fieldname === 'records') {
-             val = rowGroupIndices[i].records;
-          } else if (m.transaction_table_fieldname === 'row_checksum') {
-             const uniqueValsToHash = mappings
-                .filter(um => um.unique_records === 1 || um.unique_records === 'y' || um.unique_records === true)
-                .map(um => {
-                   if (um.transaction_table_fieldname === 'record') return rowGroupIndices[i].record;
-                   if (um.transaction_table_fieldname === 'records') return rowGroupIndices[i].records;
-                   return stgRow[um.staging_table_fieldname];
-                })
-                .map(v => String(v || ''))
-                .join('|');
-             val = crypto.createHash('sha256').update(uniqueValsToHash).digest('hex');
-          }
-
-          if (!m.transaction_table_fieldname || m.transaction_table_fieldname === 'n/a') continue;
+          const rawAmt = txnObj['base_amount'];
+          const rawDrcr = txnObj['drcr'];
           
-          if (val === '') val = null;
-
-          if (['sys_account_source_id', 'sys_import_log_id', 'account_source_row', 'created_date'].includes(m.transaction_table_fieldname)) {
-            continue; 
+          if (rawAmt !== undefined && rawAmt !== null && rawAmt !== '') {
+              const finance = resolveTransactionFinance(rawAmt, rawDrcr, isDebitNegative);
+              txnObj['base_amount'] = finance.amount;
+              if (finance.drcr) {
+                 txnObj['drcr'] = finance.drcr;
+              }
           }
 
-          if (m.transaction_table_fieldname === 'category_name') {
-            categoryName = val;
-            continue;
+          const txnCols = Object.keys(txnObj);
+          const res = db.prepare(`INSERT INTO sys_transaction (${txnCols.join(',')}) VALUES (${txnCols.map(() => '?').join(',')})`).run(...Object.values(txnObj));
+          const txnId = res.lastInsertRowid;
+          
+          existingChecksumSet.add(computedRowChecksum);
+          newRecordsCount++;
+
+          if (categoryName) {
+             let cat = db.prepare('SELECT sys_transaction_category_id FROM sys_transaction_category WHERE category_name = ?').get(categoryName) as any;
+             if (!cat) {
+               const cr = db.prepare('INSERT INTO sys_transaction_category (category_name) VALUES (?)').run(categoryName);
+               cat = { sys_transaction_category_id: cr.lastInsertRowid };
+             }
+             db.prepare('INSERT INTO sys_transaction_category_map (sys_transaction_id, sys_transaction_category_id, is_auto, confidence) VALUES (?, ?, 1, 1.0)').run(txnId, cat.sys_transaction_category_id);
           }
-
-          if (m.transaction_table_fieldname === 'sys_transaction_type_id' || m.transaction_table_fieldname === 'transaction_type_id') {
-            val = val ? String(val) : 'Unknown';
-            let ttype = db.prepare('SELECT sys_transaction_type_id FROM sys_transaction_type WHERE transaction_type = ? AND sys_account_source_id = ?').get(val, accountId) as any;
-            if (!ttype) {
-              const res = db.prepare('INSERT INTO sys_transaction_type (transaction_type, sys_account_source_id) VALUES (?, ?)').run(val, accountId);
-              ttype = { sys_transaction_type_id: res.lastInsertRowid };
-            }
-            txnObj['sys_transaction_type_id'] = ttype.sys_transaction_type_id;
-            continue;
-          }
-
-          txnObj[m.transaction_table_fieldname] = val;
-        }
-
-        if (baseCurrId) {
-          txnObj['base_curr_id'] = baseCurrId;
         }
         
-        const rawAmt = txnObj['base_amount'];
-        const rawDrcr = txnObj['drcr'];
-        
-        if (rawAmt !== undefined && rawAmt !== null && rawAmt !== '') {
-            const finance = resolveTransactionFinance(rawAmt, rawDrcr, isDebitNegative);
-            txnObj['base_amount'] = finance.amount;
-            if (finance.drcr) {
-               txnObj['drcr'] = finance.drcr;
-            }
-        }
-
-        const txnCols = Object.keys(txnObj);
-        const res = db.prepare(`INSERT INTO sys_transaction (${txnCols.join(',')}) VALUES (${txnCols.map(() => '?').join(',')})`).run(...Object.values(txnObj));
-        const txnId = res.lastInsertRowid;
-
-        if (categoryName) {
-           let cat = db.prepare('SELECT sys_transaction_category_id FROM sys_transaction_category WHERE category_name = ?').get(categoryName) as any;
-           if (!cat) {
-             const cr = db.prepare('INSERT INTO sys_transaction_category (category_name) VALUES (?)').run(categoryName);
-             cat = { sys_transaction_category_id: cr.lastInsertRowid };
-           }
-           db.prepare('INSERT INTO sys_transaction_category_map (sys_transaction_id, sys_transaction_category_id, is_auto, confidence) VALUES (?, ?, 1, 1.0)').run(txnId, cat.sys_transaction_category_id);
-        }
-      }
+        const logPayload = { 
+          status: 'success', 
+          newRecords: newRecordsCount, 
+          ignoredRecords: ignoredRecordsCount,
+          logs: [`ETL completed successfully. Ingested ${newRecordsCount} new records, ignored ${ignoredRecordsCount} duplicate records.`]
+        };
+        db.prepare('UPDATE sys_import_log SET import_log_json = ? WHERE sys_import_log_id = ?').run(JSON.stringify(logPayload), logId);
+      });
       
-      db.prepare('UPDATE sys_import_log SET import_log_json = ? WHERE sys_import_log_id = ?').run(JSON.stringify({ status: 'success' }), logId);
-    });
-    
       runEtl();
       this.rulesService.executeRules(accountId);
       
-      return { message: 'ETL completed successfully' };
+      return { 
+        message: 'ETL completed successfully', 
+        newRecords: newRecordsCount, 
+        ignoredRecords: ignoredRecordsCount 
+      };
       
     } catch(err: any) {
       const errorMsg = err.message || 'Unknown ETL exception';
@@ -355,9 +387,13 @@ export class EtlService {
       });
 
       try {
-        db.prepare(`INSERT INTO sys_import_log (sys_account_source_id, account_source_filename, account_source_filename_checksum, account_source_unique_checksum, account_source_row_count, import_log_json) VALUES (?, ?, ?, ?, ?, ?)`).run(
-           accountId, filename, hash, generatedUniqueChecksum, recordsCount, statusJson
-        );
+        db.prepare(`
+          INSERT INTO sys_import_log (
+            sys_account_source_id, account_source_type, account_source_filename, 
+            account_source_filename_checksum, account_source_unique_checksum, 
+            account_source_row_count, import_log_json
+          ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        `).run(accountId, sourceType, filename, hash, generatedUniqueChecksum, recordsCount, statusJson);
       } catch (logErr) {
         console.error('Failed to write to sys_import_log:', logErr);
       }

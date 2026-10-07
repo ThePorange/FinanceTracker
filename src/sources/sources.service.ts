@@ -7,16 +7,21 @@ export class SourcesService {
 
   getSources() {
     const rows = this.db.getDb().prepare('SELECT * FROM sys_account_source').all() as any[];
-    return rows.map(r => ({
-      id: r.sys_account_source_id,
-      name: r.account_source_name,
-      type: 'csv',
-      status: 'active',
-      config: {
-        base_currency_id: r.base_currency_id,
-        debit_negative: r.debit_negative === 1
-      }
-    }));
+    return rows.map(r => {
+      const types = this.db.getDb().prepare('SELECT DISTINCT account_source_type FROM sys_account_mapping WHERE sys_account_source_id = ?').all(r.sys_account_source_id) as any[];
+      const supportedTypes = types.map(t => t.account_source_type || 'csv');
+      return {
+        id: r.sys_account_source_id,
+        name: r.account_source_name,
+        type: supportedTypes.length > 0 ? supportedTypes.join(', ') : 'csv',
+        supported_types: supportedTypes.length > 0 ? supportedTypes : ['csv'],
+        status: 'active',
+        config: {
+          base_currency_id: r.base_currency_id,
+          debit_negative: r.debit_negative === 1
+        }
+      };
+    });
   }
 
   createSource(data: any) {
@@ -26,9 +31,11 @@ export class SourcesService {
     return this.getSource(run.lastInsertRowid as number);
   }
 
-  setupSource(data: { name: string, config: any, mappings: any[] }) {
+  setupSource(data: { name: string, config: any, mappings: any[], account_source_type?: string }) {
     const baseCurr = data.config?.base_currency_id || null;
     const debitNeg = data.config?.debit_negative ? 1 : 0;
+    const sourceType = (data.account_source_type || data.mappings?.[0]?.account_source_type || 'csv').toLowerCase();
+
     const runSource = this.db.getDb().prepare('INSERT INTO sys_account_source (account_source_name, base_currency_id, debit_negative) VALUES (?, ?, ?)').run(
       data.name, baseCurr, debitNeg
     );
@@ -38,13 +45,17 @@ export class SourcesService {
       throw new Error('No mappings provided for source induction');
     }
 
-    const stagingTableName = data.mappings[0].staging_tablename;
+    let stagingTableName = data.mappings[0].staging_tablename;
+    if (!stagingTableName.endsWith(`_${sourceType}`)) {
+      stagingTableName = `${stagingTableName}_${sourceType}`;
+    }
+
     const insertMapping = this.db.getDb().prepare(`
       INSERT INTO sys_account_mapping (
-        sys_account_source_id, staging_tablename, sourcefile_fieldname, 
+        sys_account_source_id, account_source_type, staging_tablename, sourcefile_fieldname, 
         staging_table_fieldname, datatype, transaction_table_fieldname, 
         default_value, derived_field, unique_records
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const columns: string[] = [];
@@ -52,15 +63,16 @@ export class SourcesService {
     const transaction = this.db.getDb().transaction(() => {
       for (const m of data.mappings) {
         insertMapping.run(
-          sourceId, 
-          m.staging_tablename, 
+          sourceId,
+          sourceType,
+          stagingTableName, 
           m.sourcefile_fieldname, 
           m.staging_table_fieldname, 
           m.datatype, 
           m.transaction_table_fieldname, 
           m.default_value || '', 
-          m.derived_field === 'y' ? 1 : 0, 
-          m.unique_records === 'y' ? 1 : 0
+          m.derived_field === 'y' || m.derived_field === 1 ? 1 : 0, 
+          m.unique_records === 'y' || m.unique_records === 1 ? 1 : 0
         );
 
         const typeMapping: Record<string, string> = {
@@ -89,30 +101,39 @@ export class SourcesService {
     return this.getSource(sourceId);
   }
 
-  getSourceMappings(id: number) {
+  getSourceMappings(id: number, type?: string) {
+    if (type) {
+      return this.db.getDb().prepare('SELECT * FROM sys_account_mapping WHERE sys_account_source_id = ? AND account_source_type = ?').all(id, type.toLowerCase());
+    }
     return this.db.getDb().prepare('SELECT * FROM sys_account_mapping WHERE sys_account_source_id = ?').all(id);
   }
 
-  updateSourceMappings(id: number, data: { name: string, config?: any, mappings: any[] }) {
+  updateSourceMappings(id: number, data: { name: string, config?: any, mappings: any[], account_source_type?: string }) {
     this.updateSource(id, { name: data.name, config: data.config });
 
-    const oldMappings = this.getSourceMappings(id) as any[];
+    const sourceType = (data.account_source_type || data.mappings?.[0]?.account_source_type || 'csv').toLowerCase();
+
+    const oldMappings = this.getSourceMappings(id, sourceType) as any[];
     if (oldMappings.length > 0) {
       const oldStagingName = oldMappings[0].staging_tablename;
       this.db.getDb().prepare(`DROP TABLE IF EXISTS ${oldStagingName}`).run();
     }
 
-    this.db.getDb().prepare('DELETE FROM sys_account_mapping WHERE sys_account_source_id = ?').run(id);
+    this.db.getDb().prepare('DELETE FROM sys_account_mapping WHERE sys_account_source_id = ? AND account_source_type = ?').run(id, sourceType);
 
     if (!data.mappings || data.mappings.length === 0) return this.getSource(id);
 
-    const stagingTableName = data.mappings[0].staging_tablename;
+    let stagingTableName = data.mappings[0].staging_tablename;
+    if (!stagingTableName.endsWith(`_${sourceType}`)) {
+      stagingTableName = `${stagingTableName}_${sourceType}`;
+    }
+
     const insertMapping = this.db.getDb().prepare(`
       INSERT INTO sys_account_mapping (
-        sys_account_source_id, staging_tablename, sourcefile_fieldname, 
+        sys_account_source_id, account_source_type, staging_tablename, sourcefile_fieldname, 
         staging_table_fieldname, datatype, transaction_table_fieldname, 
         default_value, derived_field, unique_records
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const columns: string[] = [];
@@ -121,7 +142,8 @@ export class SourcesService {
       for (const m of data.mappings) {
         insertMapping.run(
           id, 
-          m.staging_tablename, 
+          sourceType,
+          stagingTableName, 
           m.sourcefile_fieldname, 
           m.staging_table_fieldname, 
           m.datatype, 
@@ -173,10 +195,13 @@ export class SourcesService {
   getSource(id: number) {
     const row = this.db.getDb().prepare('SELECT * FROM sys_account_source WHERE sys_account_source_id = ?').get(id) as any;
     if (!row) throw new NotFoundException('Source not found');
+    const types = this.db.getDb().prepare('SELECT DISTINCT account_source_type FROM sys_account_mapping WHERE sys_account_source_id = ?').all(id) as any[];
+    const supportedTypes = types.map(t => t.account_source_type || 'csv');
     return {
       id: row.sys_account_source_id,
       name: row.account_source_name,
-      type: 'csv',
+      type: supportedTypes.length > 0 ? supportedTypes.join(', ') : 'csv',
+      supported_types: supportedTypes.length > 0 ? supportedTypes : ['csv'],
       status: 'active',
       config: {
         base_currency_id: row.base_currency_id,

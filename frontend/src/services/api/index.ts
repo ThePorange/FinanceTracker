@@ -121,7 +121,7 @@ export const api = {
     if (!response.ok) throw new Error('Failed to create source');
     return response.json();
   },
-  setupSource: async (data: { name: string, config: any, mappings: any[] }) => {
+  setupSource: async (data: { name: string, config: any, mappings: any[], account_source_type?: string }) => {
     const response = await fetch(`${API_BASE}/sources/setup`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -133,12 +133,14 @@ export const api = {
     }
     return response.json();
   },
-  getSourceMappings: async (id: number) => {
-    const response = await fetch(`${API_BASE}/sources/${id}/mappings`);
+  getSourceMappings: async (id: number, type?: string) => {
+    let url = `${API_BASE}/sources/${id}/mappings`;
+    if (type) url += `?type=${type}`;
+    const response = await fetch(url);
     if (!response.ok) throw new Error('Failed to fetch source mappings');
     return response.json();
   },
-  updateSourceMappings: async (id: number, data: { name: string, mappings: any[] }) => {
+  updateSourceMappings: async (id: number, data: { name: string, mappings: any[], config?: any, account_source_type?: string }) => {
     const response = await fetch(`${API_BASE}/sources/${id}/mappings`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
