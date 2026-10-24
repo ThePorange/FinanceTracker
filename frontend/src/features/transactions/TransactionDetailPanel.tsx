@@ -59,6 +59,14 @@ export function TransactionDetailPanel({ transaction, onClose }: Props) {
               <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">Auto Category</p>
               <p className="font-medium text-blue-600">{transaction.autoCategory || 'None'}</p>
             </div>
+            <div>
+              <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">Type</p>
+              <p className="font-medium text-gray-900">{transaction.transaction_type || 'None'}</p>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">Reference</p>
+              <p className="font-mono text-sm text-gray-900 break-all">{transaction.reference || 'None'}</p>
+            </div>
           </div>
 
           <hr className="border-gray-200" />

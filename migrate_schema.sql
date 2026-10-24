@@ -20,3 +20,20 @@ CREATE INDEX IF NOT EXISTS idx_sys_report_definition_name ON sys_report_definiti
 -- Add account_source_type column to sys_account_mapping, sys_import_log, sys_transaction if not present
 -- Note: SQLite application runtime automatically executes column checks and table renames on startup.
 
+-- 4. Create sys_merge_map table (Stores File Merge schema mapping and calculation rules)
+CREATE TABLE IF NOT EXISTS sys_merge_map (
+    sys_merge_map_id INTEGER PRIMARY KEY,
+    sys_account_source_id INTEGER,
+    source VARCHAR(250) NOT NULL,
+    fieldname VARCHAR(250) NOT NULL,
+    in_output VARCHAR(250) NOT NULL,
+    output_fieldname VARCHAR(250) NOT NULL,
+    output_field_order VARCHAR(250),
+    list_index VARCHAR(250),
+    datatype VARCHAR(250) NOT NULL,
+    format VARCHAR(250),
+    calculation_json VARCHAR(250),
+    created_date DATE DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(sys_account_source_id) REFERENCES sys_account_source(sys_account_source_id)
+);
+

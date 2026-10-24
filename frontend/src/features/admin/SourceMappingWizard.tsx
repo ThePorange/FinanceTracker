@@ -3,7 +3,7 @@ import { useSetupSource, useUpdateSourceMappings, useSourceMappings, useSources 
 import { useSystemData } from './useSystemData';
 import { Drawer } from '../../components/shared/Drawer';
 import { Input } from '../../components/shared/Input';
-import { Upload, Save, Database, AlertCircle, Search, Info } from 'lucide-react';
+import { Upload, Save, Database, AlertCircle, Search, Info, RefreshCw, AlertTriangle, X } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../services/api';
 
@@ -53,7 +53,10 @@ export function SourceMappingWizard({ isOpen, onClose, editSourceId }: { isOpen:
   const [searchQuery, setSearchQuery] = useState('');
   const [baseCurrencyId, setBaseCurrencyId] = useState<number | ''>('');
   const [debitNegative, setDebitNegative] = useState(true);
+  const [showRescanWarning, setShowRescanWarning] = useState(false);
+  const [rescanNotice, setRescanNotice] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const rescanFileInputRef = useRef<HTMLInputElement>(null);
 
   const setupSourceMutation = useSetupSource();
   const updateMappingsMutation = useUpdateSourceMappings();
@@ -80,6 +83,8 @@ export function SourceMappingWizard({ isOpen, onClose, editSourceId }: { isOpen:
   }, [transactionSchema]);
 
   useEffect(() => {
+    setShowRescanWarning(false);
+    setRescanNotice('');
     if (editSourceId && sourcesArr.length > 0) {
       const dbSource = sourcesArr.find((s: any) => s.id === editSourceId);
       if (dbSource) {
@@ -146,6 +151,20 @@ export function SourceMappingWizard({ isOpen, onClose, editSourceId }: { isOpen:
     return Array.from(headerSet);
   };
 
+  const getSuggestedMapping = (nameToTest: string) => {
+    if (transactionFields.includes(nameToTest)) return nameToTest;
+    const lower = nameToTest.toLowerCase();
+    if (lower.includes('date') || lower === 'dtposted') return lower.includes('post') || lower === 'dtposted' ? 'posting_date' : 'transaction_date';
+    if (lower.includes('desc') || lower === 'name') return 'description';
+    if (lower.includes('amount') || lower.includes('value') || lower === 'trnamt') return 'base_amount';
+    if (lower.includes('memo') || lower === 'memo') return 'memo';
+    if (lower.includes('ref') || lower === 'fitid') return 'reference';
+    if (lower === 'dr' || lower === 'cr' || lower === 'type' || lower === 'trntype' || lower.includes('drcr')) return 'drcr';
+    if (lower === 'checknum' || lower.includes('check')) return 'check_or_slip_number';
+    if (lower.includes('cat')) return 'category_name';
+    return '';
+  };
+
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!sourceName.trim() || !baseCurrencyId) {
       alert("Please enter a New Institution Title and select a Base Currency before uploading an extraction target.");
@@ -169,23 +188,11 @@ export function SourceMappingWizard({ isOpen, onClose, editSourceId }: { isOpen:
       if (isOfx) {
         headers = parseOfxHeaders(text);
       } else {
-        const firstLine = text.split('\n')[0];
+        const firstLine = text.split('\n')[0] || '';
         headers = firstLine.split(',').map(h => h.trim().replace(/^"|"$/g, ''));
       }
 
-      const getSuggestedMapping = (nameToTest: string) => {
-        if (transactionFields.includes(nameToTest)) return nameToTest;
-        const lower = nameToTest.toLowerCase();
-        if (lower.includes('date') || lower === 'dtposted') return lower.includes('post') || lower === 'dtposted' ? 'posting_date' : 'transaction_date';
-        if (lower.includes('desc') || lower === 'name') return 'description';
-        if (lower.includes('amount') || lower.includes('value') || lower === 'trnamt') return 'base_amount';
-        if (lower.includes('memo') || lower === 'memo') return 'memo';
-        if (lower.includes('ref') || lower === 'fitid') return 'reference';
-        if (lower === 'dr' || lower === 'cr' || lower === 'type' || lower === 'trntype' || lower.includes('drcr')) return 'drcr';
-        if (lower === 'checknum' || lower.includes('check')) return 'check_or_slip_number';
-        if (lower.includes('cat')) return 'category_name';
-        return '';
-      };
+      headers = headers.filter(h => h.length > 0);
 
       const initialFields: MappedField[] = headers.map(h => {
         const stagingName = h.toLowerCase().replace(/[^a-z0-9]/g, '_');
@@ -222,6 +229,117 @@ export function SourceMappingWizard({ isOpen, onClose, editSourceId }: { isOpen:
       setFields(initialFields);
       setInitialUniqueSignature(initialFields.map(f => `${f.staging_table_fieldname}:${f.unique_records}`).join('|'));
       setStep(2);
+    };
+    reader.readAsText(file);
+  };
+
+  const handleRescanFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const isOfx = file.name.toLowerCase().endsWith('.ofx');
+    const detectedFormat: 'csv' | 'ofx' = isOfx ? 'ofx' : 'csv';
+    setFormatType(detectedFormat);
+    setFileName(`${file.name} (Re-scanned)`);
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = event.target?.result as string;
+      let headers: string[] = [];
+
+      if (isOfx) {
+        headers = parseOfxHeaders(text);
+      } else {
+        const firstLine = text.split('\n')[0] || '';
+        headers = firstLine.split(',').map(h => h.trim().replace(/^"|"$/g, ''));
+      }
+
+      headers = headers.filter(h => h.length > 0);
+
+      // Build lookup of existing fields to preserve mappings for identical headers
+      const existingBySource = new Map<string, MappedField>();
+      const existingByStaging = new Map<string, MappedField>();
+      fields.forEach(f => {
+        if (f.sourcefile_fieldname && f.sourcefile_fieldname !== 'n/a') {
+          existingBySource.set(f.sourcefile_fieldname.toLowerCase(), f);
+        }
+        if (f.staging_table_fieldname) {
+          existingByStaging.set(f.staging_table_fieldname.toLowerCase(), f);
+        }
+      });
+
+      const newFields: MappedField[] = [];
+      const addedStagingNames = new Set<string>();
+
+      // 1. Process headers from the re-scanned file
+      headers.forEach(h => {
+        const stagingName = h.toLowerCase().replace(/[^a-z0-9]/g, '_');
+        const existing = existingBySource.get(h.toLowerCase()) || existingByStaging.get(stagingName);
+
+        if (existing) {
+          // Preserve previously configured mappings & settings
+          newFields.push({
+            sourcefile_fieldname: h,
+            staging_table_fieldname: existing.staging_table_fieldname || stagingName,
+            datatype: existing.datatype,
+            transaction_table_fieldname: existing.transaction_table_fieldname,
+            default_value: existing.default_value,
+            derived_field: existing.derived_field,
+            unique_records: existing.unique_records,
+          });
+          addedStagingNames.add((existing.staging_table_fieldname || stagingName).toLowerCase());
+        } else {
+          // New field detected in the new file
+          const txField = getSuggestedMapping(h.toLowerCase());
+          newFields.push({
+            sourcefile_fieldname: h,
+            staging_table_fieldname: stagingName,
+            datatype: (txField.includes('date') || h.toLowerCase() === 'dtposted') ? 'date' : ((txField === 'base_amount' || h.toLowerCase() === 'trnamt') ? 'real' : 'text'),
+            transaction_table_fieldname: txField,
+            default_value: '',
+            derived_field: 'n',
+            unique_records: (h.toLowerCase() === 'fitid' || txField === 'reference') ? 'y' : 'n',
+          });
+          addedStagingNames.add(stagingName.toLowerCase());
+        }
+      });
+
+      // 2. Preserve existing system/derived fields that were already mapped
+      fields.forEach(f => {
+        if (f.sourcefile_fieldname === 'n/a' || f.derived_field === 'y') {
+          if (!addedStagingNames.has(f.staging_table_fieldname.toLowerCase())) {
+            newFields.push(f);
+            addedStagingNames.add(f.staging_table_fieldname.toLowerCase());
+          }
+        }
+      });
+
+      // 3. Ensure any missing base sys_staging_fields are populated
+      const stagingDefs = stagingFieldsAPI?.data || [];
+      stagingDefs.forEach((def: any) => {
+        const sg = def.staging_table_fieldname;
+        if (!addedStagingNames.has(sg.toLowerCase())) {
+          const txField = getSuggestedMapping(sg);
+          newFields.push({
+            sourcefile_fieldname: 'n/a',
+            staging_table_fieldname: sg,
+            datatype: (def.datatype || 'text').toString().toLowerCase(),
+            transaction_table_fieldname: txField,
+            default_value: def.default_value?.toString() || '',
+            derived_field: def.derived_field ? 'y' : 'n',
+            unique_records: def.unique_records ? 'y' : 'n',
+          });
+          addedStagingNames.add(sg.toLowerCase());
+        }
+      });
+
+      setFields(newFields);
+      setRescanNotice(
+        `Schema re-scanned from "${file.name}". Matched existing fields were preserved, and new fields added. Review your mappings below and click "Commit Schema & Deploy Table" to deploy.`
+      );
+      if (rescanFileInputRef.current) {
+        rescanFileInputRef.current.value = '';
+      }
     };
     reader.readAsText(file);
   };
@@ -295,7 +413,8 @@ export function SourceMappingWizard({ isOpen, onClose, editSourceId }: { isOpen:
   };
 
   return (
-    <Drawer isOpen={isOpen} onClose={onClose} title="Extraction Target Setup Wizard (.CSV / .OFX)" defaultWidth={900}>
+    <>
+      <Drawer isOpen={isOpen} onClose={onClose} title="Extraction Target Setup Wizard (.CSV / .OFX)" defaultWidth={900}>
       {step === 1 ? (
         <div className="p-8 flex flex-col items-center justify-center min-h-[400px] space-y-8">
           <div className="w-full max-w-md flex flex-col gap-6">
@@ -373,33 +492,52 @@ export function SourceMappingWizard({ isOpen, onClose, editSourceId }: { isOpen:
                 <p className="text-sm text-slate-500 mt-2 font-medium">Mapped {fields.length} columns from <span className="text-blue-600 font-mono bg-blue-50 px-2 py-0.5 rounded">{fileName}</span></p>
               </div>
 
-              {editSourceId && (
-                <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-xl border border-slate-200">
-                  <button
-                    type="button"
-                    onClick={() => setFormatType('csv')}
-                    className={`px-3 py-1.5 rounded-lg font-bold text-xs transition-all ${formatType === 'csv' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
-                  >
-                    CSV Mapping
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setFormatType('ofx')}
-                    className={`px-3 py-1.5 rounded-lg font-bold text-xs transition-all ${formatType === 'ofx' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
-                  >
-                    OFX Mapping
-                  </button>
-                </div>
-              )}
-              <div className="relative w-full max-w-xs">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+              <div className="flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowRescanWarning(true)}
+                  className="flex items-center gap-2 px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 rounded-xl font-bold text-xs transition-all shadow-sm hover:shadow"
+                  title="Upload a new .csv or .ofx file to re-scan and update the schema"
+                >
+                  <RefreshCw size={14} className="text-amber-600" />
+                  Re-Scan Schema
+                </button>
                 <input 
-                  type="text" 
-                  placeholder="Filter mappings..." 
-                  value={searchQuery}
-                  onChange={e => setSearchQuery(e.target.value)}
-                  className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-colors"
+                  type="file" 
+                  accept=".csv,.ofx" 
+                  className="hidden" 
+                  ref={rescanFileInputRef} 
+                  onChange={handleRescanFileUpload} 
                 />
+
+                {editSourceId && (
+                  <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-xl border border-slate-200">
+                    <button
+                      type="button"
+                      onClick={() => setFormatType('csv')}
+                      className={`px-3 py-1.5 rounded-lg font-bold text-xs transition-all ${formatType === 'csv' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
+                    >
+                      CSV Mapping
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFormatType('ofx')}
+                      className={`px-3 py-1.5 rounded-lg font-bold text-xs transition-all ${formatType === 'ofx' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
+                    >
+                      OFX Mapping
+                    </button>
+                  </div>
+                )}
+                <div className="relative w-full max-w-xs">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                  <input 
+                    type="text" 
+                    placeholder="Filter mappings..." 
+                    value={searchQuery}
+                    onChange={e => setSearchQuery(e.target.value)}
+                    className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-colors"
+                  />
+                </div>
               </div>
             </div>
 
@@ -425,6 +563,25 @@ export function SourceMappingWizard({ isOpen, onClose, editSourceId }: { isOpen:
           </div>
 
           <div className="flex-1 overflow-auto p-6">
+            {rescanNotice && (
+              <div className="mb-4 bg-amber-50 border border-amber-200 rounded-xl p-3.5 flex items-start justify-between gap-3 text-amber-900 text-xs shadow-sm animate-in fade-in duration-200">
+                <div className="flex items-start gap-2.5">
+                  <AlertTriangle className="text-amber-600 shrink-0 mt-0.5" size={16} />
+                  <div className="leading-relaxed">
+                    <span className="font-bold">Schema Re-scanned: </span>
+                    {rescanNotice}
+                  </div>
+                </div>
+                <button 
+                  type="button" 
+                  onClick={() => setRescanNotice('')} 
+                  className="text-amber-600 hover:text-amber-800 p-0.5 rounded hover:bg-amber-100 transition-colors shrink-0"
+                  title="Dismiss notice"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            )}
             <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
               <table className="w-full text-sm text-left whitespace-nowrap">
                 <thead className="bg-slate-50 text-slate-700 font-bold border-b border-slate-200">
@@ -508,5 +665,63 @@ export function SourceMappingWizard({ isOpen, onClose, editSourceId }: { isOpen:
         </div>
       )}
     </Drawer>
+
+      {showRescanWarning && (
+        <div 
+          className="fixed inset-0 z-[70] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200"
+          onClick={() => setShowRescanWarning(false)}
+        >
+          <div 
+            className="bg-white rounded-2xl shadow-2xl max-w-md w-full border border-slate-200 overflow-hidden animate-in zoom-in-95 duration-200"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="p-6">
+              <div className="flex items-start gap-4">
+                <div className="w-12 h-12 rounded-2xl bg-amber-100 text-amber-600 flex items-center justify-center shrink-0">
+                  <AlertTriangle size={24} />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900">Re-Scan Schema Warning</h3>
+                  <p className="text-xs text-slate-500 font-medium mt-0.5">Existing table schema update</p>
+                </div>
+              </div>
+
+              <div className="mt-4 p-4 bg-amber-50/70 border border-amber-200/80 rounded-xl text-xs text-amber-900 leading-relaxed space-y-2.5">
+                <p className="font-semibold text-slate-800 text-sm">
+                  Are you sure you want to re-scan the schema for this Data Source?
+                </p>
+                <p className="text-slate-600">
+                  Selecting a new <span className="font-mono font-bold text-slate-800">.CSV</span> or <span className="font-mono font-bold text-slate-800">.OFX</span> file will update the field mappings and recreate the staging table structure upon saving.
+                </p>
+                <p className="font-medium text-amber-900 bg-amber-100/60 p-2.5 rounded-lg border border-amber-200">
+                  ⚠️ <strong>Warning:</strong> This may affect the ability to load or import previous files that relied on the earlier file layout or checksum definitions.
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-slate-50 px-6 py-4 border-t border-slate-200 flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setShowRescanWarning(false)}
+                className="px-4 py-2 text-slate-600 hover:text-slate-800 font-bold text-xs rounded-xl hover:bg-slate-200/70 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowRescanWarning(false);
+                  rescanFileInputRef.current?.click();
+                }}
+                className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl shadow-md shadow-amber-600/20 transition-all flex items-center gap-1.5"
+              >
+                <RefreshCw size={14} />
+                Proceed & Select File
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }

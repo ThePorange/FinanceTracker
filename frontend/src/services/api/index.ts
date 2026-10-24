@@ -305,6 +305,100 @@ export const api = {
     });
     if (!response.ok) throw new Error('Failed to evaluate report');
     return response.json();
+  },
+
+  // --- File Merge ---
+  getFileMergeMapping: async (sourceId: number) => {
+    const response = await fetch(`${API_BASE}/file-merge/mapping/${sourceId}`);
+    if (!response.ok) throw new Error('Failed to fetch merge mapping');
+    return response.json();
+  },
+  saveFileMergeMapping: async (sourceId: number, mappings: any[]) => {
+    const response = await fetch(`${API_BASE}/file-merge/mapping/${sourceId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mappings }),
+    });
+    if (!response.ok) throw new Error('Failed to save merge mapping');
+    return response.json();
+  },
+  inspectMergeFiles: async (csvFile: File, ofxFile: File, sourceId?: number) => {
+    const formData = new FormData();
+    formData.append('csvFile', csvFile);
+    formData.append('ofxFile', ofxFile);
+    if (sourceId) formData.append('sourceId', String(sourceId));
+
+    const response = await fetch(`${API_BASE}/file-merge/inspect`, {
+      method: 'POST',
+      body: formData,
+    });
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.message || 'Failed to inspect files');
+    }
+    return response.json();
+  },
+  executeFileMerge: async (csvFile: File, ofxFile: File, mappings: any[], sourceId?: number, accountSourceName?: string) => {
+    const formData = new FormData();
+    formData.append('csvFile', csvFile);
+    formData.append('ofxFile', ofxFile);
+    formData.append('mappings', JSON.stringify(mappings));
+    if (sourceId) formData.append('sourceId', String(sourceId));
+    if (accountSourceName) formData.append('accountSourceName', accountSourceName);
+
+    const response = await fetch(`${API_BASE}/file-merge/execute`, {
+      method: 'POST',
+      body: formData,
+    });
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.message || 'Failed to execute merge');
+    }
+    return response.json();
+  },
+  downloadMergedCsv: async (csvFile: File, ofxFile: File, mappings: any[], accountSourceName?: string, sourceId?: number) => {
+    const formData = new FormData();
+    formData.append('csvFile', csvFile);
+    formData.append('ofxFile', ofxFile);
+    formData.append('mappings', JSON.stringify(mappings));
+    if (accountSourceName) formData.append('accountSourceName', accountSourceName);
+    if (sourceId) formData.append('sourceId', String(sourceId));
+
+    const response = await fetch(`${API_BASE}/file-merge/download`, {
+      method: 'POST',
+      body: formData,
+    });
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.message || 'Failed to download merged CSV');
+    }
+
+    let filename = '';
+    const disposition = response.headers.get('Content-Disposition');
+    if (disposition && disposition.includes('filename=')) {
+      const match = disposition.match(/filename="?([^";]+)"?/);
+      if (match) filename = match[1];
+    }
+    if (!filename) {
+      const pad = (n: number) => String(n).padStart(2, '0');
+      const now = new Date();
+      const timestamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+      const cleanName = (accountSourceName || '').trim().replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_-]/g, '');
+      filename = cleanName ? `merged_${cleanName}${timestamp}.csv` : `merged_${timestamp}.csv`;
+    }
+
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+
+    const file = new File([blob], filename, { type: 'text/csv' });
+    return { filename, blob, file };
   }
 };
 

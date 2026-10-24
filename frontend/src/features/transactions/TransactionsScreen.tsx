@@ -122,7 +122,7 @@ export function TransactionsScreen() {
     
     if (filterInfo.length === 0) filterInfo.push("Filters,None");
 
-    const headers = ['Posting Date', 'Transaction Date', 'Description', 'Amount', 'DR/CR', 'Account', 'Auto Category', 'User Category', 'Type'];
+    const headers = ['Posting Date', 'Transaction Date', 'Description', 'Amount', 'DR/CR', 'Account', 'Auto Category', 'User Category', 'Type', 'Reference'];
     const rows = filtered.map(t => [
        formatLocalDate(t.posting_date),
        formatLocalDate(t.transaction_date),
@@ -132,7 +132,8 @@ export function TransactionsScreen() {
        `"${(t.account || '').replace(/"/g, '""')}"`,
        `"${(t.autoCategory || '').replace(/"/g, '""')}"`,
        `"${(t.userCategory || '').replace(/"/g, '""')}"`,
-       `"${(t.transaction_type || '').replace(/"/g, '""')}"`
+       `"${(t.transaction_type || '').replace(/"/g, '""')}"`,
+       `"${(t.reference || '').replace(/"/g, '""')}"`
     ]);
 
     const csvStr = [
@@ -219,6 +220,7 @@ export function TransactionsScreen() {
           th('Auto Category', 'autoCategory'),
           th('User Category', 'userCategory'),
           th('Type', 'transaction_type'),
+          th('Reference', 'reference'),
         ]}
         isLoading={isLoading}
       >
@@ -249,11 +251,12 @@ export function TransactionsScreen() {
               )}
             </td>
             <td className="px-4 py-4 text-gray-500 text-sm">{txn.transaction_type || '-'}</td>
+            <td className="px-4 py-4 text-gray-500 text-sm font-mono">{txn.reference || '-'}</td>
           </tr>
         ))}
         {filtered.length === 0 && !isLoading && (
           <tr>
-            <td colSpan={9} className="text-center py-12 text-gray-500">
+            <td colSpan={10} className="text-center py-12 text-gray-500">
               No transactions found matching your search.
             </td>
           </tr>

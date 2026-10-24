@@ -78,7 +78,7 @@ Open a terminal in the project root directory on your local Mac machine and run 
 docker build --platform linux/amd64 --no-cache -t financetracker-backend:latest -f docker/Dockerfile .
 
 # Build the frontend image for NAS target architecture (amd64)
-docker build --platform linux/amd64 -t financetracker-frontend:latest -f docker/Dockerfile.frontend .
+docker build --platform linux/amd64 --no-cache -t financetracker-frontend:latest -f docker/Dockerfile.frontend .
 ```
 
 ### Step 2: Export the Images to Tarballs

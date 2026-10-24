@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, NavLink, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { LayoutDashboard, Receipt, BarChart3, Tags, Network, Wallet, Database, Activity, ShieldAlert, UploadCloud, TableProperties, LayoutTemplate, BookMarked, FolderGit2, Pin, PinOff } from 'lucide-react';
+import { LayoutDashboard, Receipt, BarChart3, Tags, Network, Wallet, Database, Activity, ShieldAlert, UploadCloud, TableProperties, LayoutTemplate, BookMarked, FolderGit2, Pin, PinOff, GitMerge } from 'lucide-react';
 import { TransactionsScreen } from './features/transactions/TransactionsScreen';
 import { ReportingScreen } from './features/reporting/ReportingScreen';
 import { CategoryManagementScreen } from './features/categories/CategoryManagementScreen';
@@ -15,6 +15,7 @@ import { StagingDataScreen } from './features/admin/StagingDataScreen';
 import { AccountGroupsScreen } from './features/admin/AccountGroupsScreen';
 import { RulesScreen } from './features/admin/RulesScreen';
 import { RuleGroupsScreen } from './features/admin/RuleGroupsScreen';
+import { FileMergeScreen } from './features/admin/FileMergeScreen';
 import { TransactionFilterProvider } from './features/transactions/TransactionFilterContext';
 
 const queryClient = new QueryClient({
@@ -42,6 +43,7 @@ function Sidebar({ isAdminMode, setIsAdminMode }: { isAdminMode: boolean, setIsA
 
   const adminLinks = [
     { to: '/admin/etl', icon: <Activity size={20} />, label: 'ETL Jobs' },
+    { to: '/admin/file-merge', icon: <GitMerge size={20} />, label: 'File Merge' },
     { to: '/admin/import', icon: <UploadCloud size={20} />, label: 'Data Import' },
     { to: '/admin/sources', icon: <Database size={20} />, label: 'Data Sources (Wizard)' },
     { to: '/admin/groups', icon: <Network size={20} />, label: 'Account Groups' },
@@ -50,6 +52,7 @@ function Sidebar({ isAdminMode, setIsAdminMode }: { isAdminMode: boolean, setIsA
   ];
 
   const sysTableLinks = [
+    { to: '/admin/tables/sys_merge_map', label: 'Merge Maps' },
     { to: '/admin/tables/sys_import_log', label: 'Import Logs' },
     { to: '/admin/tables/sys_transaction_type', label: 'Transaction Types' },
     { to: '/admin/tables/sys_transaction_category', label: 'Categories Matrix' },
@@ -177,6 +180,7 @@ function App() {
                   <Route path="/rules" element={<RulesScreen />} />
                   <Route path="/admin/rules" element={<RulesScreen />} />
                   <Route path="/admin/etl" element={<EtlJobsScreen />} />
+                  <Route path="/admin/file-merge" element={<FileMergeScreen />} />
                   <Route path="/admin/import" element={<DataImportScreen />} />
                   <Route path="/admin/sources" element={<DataSourcesScreen />} />
                   <Route path="/admin/groups" element={<AccountGroupsScreen />} />

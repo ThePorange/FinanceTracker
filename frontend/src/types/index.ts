@@ -10,6 +10,7 @@ export interface Transaction {
   autoCategory: string;
   userCategory: string | null;
   transaction_type?: string;
+  reference?: string;
   row_checksum?: string;
 }
 

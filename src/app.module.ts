@@ -6,9 +6,10 @@ import { EtlModule } from './etl/etl.module';
 import { RulesModule } from './rules/rules.module';
 import { ReportingModule } from './reporting/reporting.module';
 import { SourcesModule } from './sources/sources.module';
+import { FileMergeModule } from './file-merge/file-merge.module';
 
 @Module({
-  imports: [DatabaseModule, ConfigModule, StagingModule, EtlModule, RulesModule, ReportingModule, SourcesModule],
+  imports: [DatabaseModule, ConfigModule, StagingModule, EtlModule, RulesModule, ReportingModule, SourcesModule, FileMergeModule],
   controllers: [],
   providers: [],
 })

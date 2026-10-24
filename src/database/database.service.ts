@@ -69,6 +69,24 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
         this.db.prepare(`UPDATE sys_account_mapping SET staging_tablename = ? WHERE staging_tablename = ?`).run(newName, oldName);
       }
     }
+
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS sys_merge_map (
+        sys_merge_map_id INTEGER PRIMARY KEY,
+        sys_account_source_id INTEGER,
+        source VARCHAR(250) NOT NULL,
+        fieldname VARCHAR(250) NOT NULL,
+        in_output VARCHAR(250) NOT NULL,
+        output_fieldname VARCHAR(250) NOT NULL,
+        output_field_order VARCHAR(250),
+        list_index VARCHAR(250),
+        datatype VARCHAR(250) NOT NULL,
+        format VARCHAR(250),
+        calculation_json VARCHAR(250),
+        created_date DATE DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(sys_account_source_id) REFERENCES sys_account_source(sys_account_source_id)
+      )
+    `);
   }
 
   onModuleDestroy() {

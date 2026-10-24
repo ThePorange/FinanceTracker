@@ -3,6 +3,7 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile
+    image: financetracker-backend:latest
     container_name: financetracker-backend
     restart: unless-stopped
     volumes:
@@ -16,6 +17,7 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile.frontend
+    image: financetracker-frontend:latest
     container_name: financetracker-frontend
     restart: unless-stopped
     ports:
