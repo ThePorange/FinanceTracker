@@ -47,7 +47,14 @@ export function DataImportScreen() {
       const res = await importMutation.mutateAsync({ sourceId: Number(selectedSourceId), file });
       const newCount = res.newRecords !== undefined ? res.newRecords : 'N/A';
       const ignoredCount = res.ignoredRecords !== undefined ? res.ignoredRecords : 'N/A';
-      alert(`Data import completed successfully!\n\nNew records added: ${newCount}\nDuplicate records ignored: ${ignoredCount}`);
+      const rulesCount = res.processedRules !== undefined ? res.processedRules : 'N/A';
+      const mappedCount = res.mappedTransactions !== undefined ? res.mappedTransactions : 'N/A';
+      alert(
+        `Data import & rules execution completed successfully!\n\n` +
+        `New records added: ${newCount}\n` +
+        `Duplicate records ignored: ${ignoredCount}\n` +
+        `Rules executed: ${rulesCount} (${mappedCount} transactions categorized)`
+      );
       setFile(null);
       if (fileInputRef.current) fileInputRef.current.value = '';
     } catch (err: any) {

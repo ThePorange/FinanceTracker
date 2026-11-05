@@ -27,7 +27,8 @@ export class ReportingService implements OnModuleInit {
     const offset = limit > 0 ? (page - 1) * limit : 0;
 
     let sql = `
-      SELECT t.sys_transaction_id AS id,
+      SELECT t.*,
+             t.sys_transaction_id AS id,
              t.posting_date,      
              t.transaction_date,  
              COALESCE(t.transaction_date, t.posting_date, t.created_date) AS date,

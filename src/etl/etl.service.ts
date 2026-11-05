@@ -124,6 +124,7 @@ export class EtlService {
       
       let newRecordsCount = 0;
       let ignoredRecordsCount = 0;
+      let createdLogId: number | bigint = 0;
 
       const runEtl = db.transaction(() => {
         db.exec(`DELETE FROM ${stagingTable}`); // Clear staging
@@ -203,6 +204,7 @@ export class EtlService {
         `);
         const logInfo = insertImportLog.run(accountId, sourceType, filename, hash, uniqueChecksum, records.length, JSON.stringify({ status: 'Processing' }));
         const logId = logInfo.lastInsertRowid;
+        createdLogId = logId;
 
         let rowCount = 0;
         const sourceRecord = db.prepare('SELECT * FROM sys_account_source WHERE sys_account_source_id = ?').get(accountId) as any;
@@ -370,12 +372,29 @@ export class EtlService {
       });
       
       runEtl();
-      this.rulesService.executeRules(accountId);
+      const rulesResult = this.rulesService.executeRules();
+
+      if (createdLogId) {
+        const finalLogPayload = {
+          status: 'success',
+          newRecords: newRecordsCount,
+          ignoredRecords: ignoredRecordsCount,
+          processedRules: rulesResult.processedRules,
+          mappedTransactions: rulesResult.mappedTransactions,
+          logs: [
+            `ETL completed successfully. Ingested ${newRecordsCount} new records, ignored ${ignoredRecordsCount} duplicate records.`,
+            `Executed all rules (${rulesResult.processedRules} rules processed, ${rulesResult.mappedTransactions} transactions categorized).`
+          ]
+        };
+        db.prepare('UPDATE sys_import_log SET import_log_json = ? WHERE sys_import_log_id = ?').run(JSON.stringify(finalLogPayload), createdLogId);
+      }
       
       return { 
         message: 'ETL completed successfully', 
         newRecords: newRecordsCount, 
-        ignoredRecords: ignoredRecordsCount 
+        ignoredRecords: ignoredRecordsCount,
+        processedRules: rulesResult.processedRules,
+        mappedTransactions: rulesResult.mappedTransactions
       };
       
     } catch(err: any) {
@@ -445,7 +464,8 @@ export class EtlService {
         name: `Import Job - ${r.account_source_name || 'Generic'}`,
         status: parsed.status || 'success',
         startedAt: parsed.startedAt || r.created_date,
-        completedAt: parsed.completedAt || r.created_date
+        completedAt: parsed.completedAt || r.created_date,
+        logs: parsed.logs || []
       };
     });
   }

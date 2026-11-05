@@ -64,6 +64,8 @@ export function FileMergeScreen() {
     sourceName: string;
     newRecords?: number;
     ignoredRecords?: number;
+    processedRules?: number;
+    mappedTransactions?: number;
     message?: string;
   } | null>(null);
 
@@ -321,10 +323,21 @@ export function FileMergeScreen() {
       // 3. Load the file using the currently selected Account Source
       const importRes = await api.importData(Number(selectedSourceId), file);
 
-      // 4. Invalidate caches so tables, ETL jobs and reporting refresh
+      // 4. Execute All Rules if not already returned by the import endpoint
+      let processedRules = importRes.processedRules;
+      let mappedTransactions = importRes.mappedTransactions;
+      if (processedRules === undefined) {
+        const rulesRes = await api.executeRules();
+        processedRules = rulesRes?.processedRules;
+        mappedTransactions = rulesRes?.mappedTransactions;
+      }
+
+      // 5. Invalidate caches so tables, ETL jobs, rules and reporting refresh
       queryClient.invalidateQueries({ queryKey: ['etlJobs'] });
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
       queryClient.invalidateQueries({ queryKey: ['reporting'] });
+      queryClient.invalidateQueries({ queryKey: ['categories'] });
+      queryClient.invalidateQueries({ queryKey: ['systemData', 'sys_rules'] });
       queryClient.invalidateQueries({ queryKey: ['stagingData'] });
 
       const newCount = importRes.newRecords !== undefined ? importRes.newRecords : 0;
@@ -336,15 +349,18 @@ export function FileMergeScreen() {
         sourceName,
         newRecords: newCount,
         ignoredRecords: ignoredCount,
+        processedRules,
+        mappedTransactions,
         message: importRes.message,
       });
 
       alert(
-        `File Merge Download & Ingestion Completed Successfully!\n\n` +
+        `File Merge Download, Ingestion & Rules Execution Completed Successfully!\n\n` +
         `Target Source: ${sourceName}\n` +
         `File: ${filename}\n\n` +
         `New records added: ${newCount}\n` +
-        `Duplicate records ignored: ${ignoredCount}`
+        `Duplicate records ignored: ${ignoredCount}\n` +
+        `Rules executed: ${processedRules ?? 'N/A'} (${mappedTransactions ?? 'N/A'} transactions categorized)`
       );
     } catch (err: any) {
       setErrorMessage(err.message || 'Download and Load failed');
@@ -882,13 +898,18 @@ export function FileMergeScreen() {
                 <div className="text-xs text-emerald-800">
                   Loaded into account source <span className="font-semibold text-emerald-950">{loadResult.sourceName}</span> from file <span className="font-mono font-bold text-emerald-950">{loadResult.filename}</span>.
                 </div>
-                <div className="flex items-center gap-4 pt-1 text-xs font-semibold">
+                <div className="flex flex-wrap items-center gap-4 pt-1 text-xs font-semibold">
                   <span className="text-emerald-700 bg-emerald-100/70 px-2 py-0.5 rounded-md">
                     +{loadResult.newRecords} new records added
                   </span>
                   <span className="text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md">
                     {loadResult.ignoredRecords} duplicates ignored
                   </span>
+                  {loadResult.processedRules !== undefined && (
+                    <span className="text-indigo-700 bg-indigo-100/70 px-2 py-0.5 rounded-md">
+                      {loadResult.processedRules} rules executed ({loadResult.mappedTransactions ?? 0} categorized)
+                    </span>
+                  )}
                 </div>
               </div>
             </div>

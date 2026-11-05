@@ -7,8 +7,19 @@ import { TransactionFilterPanel } from '../transactions/TransactionFilterPanel';
 import { Input } from '../../components/shared/Input';
 import { parseLocalDate } from '../../utils/dateUtils';
 
+import { useConfig } from '../admin/useConfig';
+import {
+  normalizeTransactionFields,
+  matchesTransactionSearch,
+} from '../transactions/transactionFieldConfig';
+
 export function DashboardScreen() {
   const { filters, setFilters, search, setSearch } = useTransactionFilters();
+  const { data: appConfig } = useConfig();
+
+  const fieldConfig = useMemo(() => {
+    return normalizeTransactionFields(appConfig?.transaction_fields);
+  }, [appConfig?.transaction_fields]);
 
   // Since Dashboard needs limit: -1, we can merge the context filters with the limit override
   const dashboardFilters = { ...filters, limit: -1 };
@@ -18,9 +29,8 @@ export function DashboardScreen() {
     if (!transactions) return [];
     const txList: Transaction[] = Array.isArray(transactions) ? transactions : ((transactions as any)?.data || []);
     if (!search) return txList;
-    const lower = search.toLowerCase();
-    return txList.filter((t: Transaction) => t.description?.toLowerCase().includes(lower));
-  }, [transactions, search]);
+    return txList.filter((t: Transaction) => matchesTransactionSearch(t, search, fieldConfig));
+  }, [transactions, search, fieldConfig]);
 
   const { categorySpend, monthlyTrend, yoyTrend, ytdTrend, availableYears, totalCR, totalDR } = useMemo(() => {
     if (!filteredTransactions || filteredTransactions.length === 0) return { categorySpend: [], monthlyTrend: [], yoyTrend: [], ytdTrend: [], availableYears: [], totalCR: 0, totalDR: 0 };
