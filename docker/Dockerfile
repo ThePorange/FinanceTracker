@@ -20,6 +20,9 @@ FROM node:20-bookworm-slim
 WORKDIR /app
 ENV NODE_ENV=production
 
+# Install sqlite3 CLI for maintenance, migrations, and inspection
+RUN apt-get update && apt-get install -y --no-install-recommends sqlite3 && rm -rf /var/lib/apt/lists/*
+
 # Copy compiled JS and dependencies from builder stage
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/node_modules ./node_modules

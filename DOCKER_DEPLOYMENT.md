@@ -136,20 +136,37 @@ SSH into your NAS, navigate to the docker folder, stop existing containers, and 
 ```bash
 cd /volume2/financetracker/docker
 
-# Stop existing containers if running
-sudo docker compose down
+# 1. Stop any running Docker Compose services
+sudo docker compose down 2>/dev/null || true
 
-# Load the new backend and frontend images
+# 2. Stop and remove standalone containers (in case they were started via UGOS UI to prevent name conflicts)
+sudo docker stop financetracker-frontend financetracker-backend 2>/dev/null || true
+sudo docker rm financetracker-frontend financetracker-backend 2>/dev/null || true
+
+# 3. Load the new backend and frontend images
 sudo docker load -i backend.tar
 sudo docker load -i frontend.tar
 ```
 
 ### Step 5: Start the Containers on the NAS
-Run the following command to start the containers:
+Run the following command to start the containers using Docker Compose:
 ```bash
+cd /volume2/financetracker/docker
 sudo docker compose up -d
 ```
-*(Alternatively, you can create a new project in the UGOS Docker UI, paste the docker-compose YAML above, map the folders, and start it.)*
+
+> [!WARNING]
+> **Crucial: Use Docker Compose, NOT "Create Container" in the UGOS UI**
+> Do **NOT** create containers by clicking the "Run" / "Create Container" button directly on images in the UGOS Docker app. 
+> 
+> When you click "Run" on an image in the UI:
+> - It generates a standalone container with auto-assigned random ports (e.g. `40889` or `38845`).
+> - It **skips** the volume mount `/volume2/financetracker/app-data:/app/db`, causing the backend to write to an empty ephemeral database rather than your existing database!
+>
+> If you prefer using the UGOS Web UI instead of SSH, you must use the **Project** tab:
+> 1. In the UGOS Docker App, go to **Project** -> **Create Project**.
+> 2. Point to `/volume2/financetracker/docker` (where `docker-compose.yml` resides).
+> 3. Start the project. This ensures volume mappings and fixed ports are properly applied.
 
 ### Step 6: Update Your Existing NAS Reverse Proxy
 Add a proxy rule in your central Nginx reverse proxy to route your desired local domain or subfolder to the application:
@@ -202,6 +219,26 @@ Add a proxy rule in your central Nginx reverse proxy to route your desired local
   docker save -o frontend.tar financetracker-frontend:latest
   ```
   Transfer the new `.tar` files to the NAS and run `sudo docker load -i backend.tar && sudo docker load -i frontend.tar`.
+
+### D. Empty Database or Random High Ports (`40889` instead of `8081`)
+* **Problem:** The website loads (e.g. on port `40889`), but shows 0 transactions and empty tables even though your NAS folder `financetracker/app-data` contains a populated 6MB `banking.db`.
+* **Reason:** The containers were started individually via the UGOS Docker UI ("Images" -> "Run") rather than via Docker Compose. The UGOS UI assigned random ports (e.g. `40889:80` and `38845:3000`) and failed to map the `/volume2/financetracker/app-data:/app/db` volume, causing the container to boot with a blank temporary internal database.
+* **Fix:** 
+  1. Stop and remove the standalone containers:
+     ```bash
+     sudo docker stop financetracker-frontend financetracker-backend
+     sudo docker rm financetracker-frontend financetracker-backend
+     ```
+  2. Launch via Docker Compose from the directory where `docker-compose.yml` resides:
+     ```bash
+     cd /volume2/financetracker/docker
+     sudo docker compose up -d
+     ```
+  3. Verify the volume is attached:
+     ```bash
+     sudo docker inspect financetracker-backend --format '{{range .Mounts}}{{println .Source "->" .Destination}}{{end}}'
+     # Should show: /volume2/financetracker/app-data -> /app/db
+     ```
 
 ---
 
@@ -256,9 +293,13 @@ If you added new columns to existing populated tables (e.g. `ALTER TABLE sys_tra
 
 #### Step 3: Verify Migration & Data Integrity
 After applying the migration:
-1. Verify that all existing records and transactions are intact:
+1. Verify that all existing records and transactions are intact (using either `sqlite3` or the Node helper):
    ```bash
+   # Method A: Using sqlite3 CLI
    sudo docker exec -it financetracker-backend sqlite3 /app/db/banking.db "SELECT COUNT(*) FROM sys_transaction;"
+
+   # Method B: Using Node one-liner
+   sudo docker exec -it financetracker-backend node -e "const db = require('better-sqlite3')('/app/db/banking.db'); console.log('Transactions:', db.prepare('SELECT count(*) as count FROM sys_transaction').get());"
    ```
 2. Access the application UI via your browser (`http://<NAS_IP>:8081` or your reverse proxy domain) and verify that all screens, transactions, and reporting functions load cleanly.
 
