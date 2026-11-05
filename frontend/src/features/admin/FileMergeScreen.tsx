@@ -254,13 +254,16 @@ export function FileMergeScreen() {
     try {
       const currentSource = sourcesArr.find((s: any) => (s.id || s.sys_account_source_id) === Number(selectedSourceId));
       const sourceName = currentSource ? (currentSource.name || currentSource.account_source_name) : '';
-      await api.downloadMergedCsv(
+      const res = await api.downloadMergedCsv(
         csvFile,
         ofxFile,
         mappings,
         sourceName,
         selectedSourceId ? Number(selectedSourceId) : undefined
       );
+      if (res?.filename) {
+        setMergeResult((prev: any) => (prev ? { ...prev, filename: res.filename } : prev));
+      }
     } catch (err: any) {
       alert(`Download failed: ${err.message}`);
     } finally {

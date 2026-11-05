@@ -267,7 +267,8 @@ export class FileMergeService {
   executeMerge(
     csvBuffer: Buffer | string,
     ofxBuffer: Buffer | string,
-    mappingRules: MergeMapRow[]
+    mappingRules: MergeMapRow[],
+    sourceId?: number
   ) {
     const csvContent = typeof csvBuffer === 'string' ? csvBuffer : csvBuffer.toString('utf8');
     const ofxContent = typeof ofxBuffer === 'string' ? ofxBuffer : ofxBuffer.toString('utf8');
@@ -608,6 +609,12 @@ export class FileMergeService {
     }
     const csvString = csvLines.join('\n');
 
+    const { minTransactionDate, maxTransactionDate } = this.extractMinMaxTransactionDates(
+      mergedOutputRows,
+      outputFields,
+      sourceId
+    );
+
     return {
       columns: headers,
       preview: mergedOutputRows,
@@ -619,6 +626,120 @@ export class FileMergeService {
       unmatchedOfxFitids,
       unmatchedOfxRecords,
       csvString,
+      minTransactionDate,
+      maxTransactionDate,
+    };
+  }
+
+  private parseDateToYyyyMmDd(val: any, formatPattern?: string): string | null {
+    if (val === null || val === undefined || val === '') return null;
+    const raw = String(val).trim();
+    if (!raw) return null;
+
+    const fmt = (formatPattern || '').toLowerCase().replace(/['"]/g, '').trim();
+    let year = '';
+    let month = '';
+    let day = '';
+
+    if (/^\d{8}/.test(raw)) {
+      year = raw.slice(0, 4);
+      month = raw.slice(4, 6);
+      day = raw.slice(6, 8);
+    } else {
+      const parts = raw.split(/[\/\-\.]/);
+      if (parts.length === 3) {
+        if (parts[0].length === 4) {
+          year = parts[0];
+          month = parts[1].padStart(2, '0');
+          day = parts[2].padStart(2, '0');
+        } else if (parts[2].length === 4 || parts[2].length === 2) {
+          year = parts[2].length === 2 ? `20${parts[2]}` : parts[2];
+          if (fmt === 'dd/mm/yyyy') {
+            day = parts[0].padStart(2, '0');
+            month = parts[1].padStart(2, '0');
+          } else {
+            month = parts[0].padStart(2, '0');
+            day = parts[1].padStart(2, '0');
+          }
+        }
+      }
+    }
+
+    if (/^\d{4}$/.test(year) && /^\d{2}$/.test(month) && /^\d{2}$/.test(day)) {
+      return `${year}${month}${day}`;
+    }
+    return null;
+  }
+
+  private extractMinMaxTransactionDates(
+    mergedOutputRows: Record<string, any>[],
+    outputFields: MergeMapRow[],
+    sourceId?: number
+  ): { minTransactionDate?: string; maxTransactionDate?: string } {
+    if (!mergedOutputRows || mergedOutputRows.length === 0) {
+      return {};
+    }
+
+    const normalizeKey = (s: string) => (s || '').toLowerCase().replace(/[\s_-]/g, '');
+
+    // 1. Look for explicit TransactionDate column in output fields
+    let targetRule = outputFields.find(
+      f => normalizeKey(f.output_fieldname || f.fieldname) === 'transactiondate'
+    );
+
+    // 2. Check sys_account_mapping for the source's mapped transaction_date field if sourceId provided
+    if (!targetRule && sourceId) {
+      try {
+        const db = this.dbService.getDb();
+        const mappingRow = db
+          .prepare(
+            `SELECT sourcefile_fieldname FROM sys_account_mapping 
+             WHERE sys_account_source_id = ? AND account_source_type = 'csv' AND transaction_table_fieldname = 'transaction_date'
+             LIMIT 1`
+          )
+          .get(sourceId) as { sourcefile_fieldname?: string } | undefined;
+
+        if (mappingRow?.sourcefile_fieldname) {
+          const mappedNorm = normalizeKey(mappingRow.sourcefile_fieldname);
+          targetRule = outputFields.find(
+            f => normalizeKey(f.output_fieldname || f.fieldname) === mappedNorm
+          );
+        }
+      } catch {
+        // Ignore DB lookup errors and fall back to heuristics
+      }
+    }
+
+    // 3. Fallback to 'date' / 'postingdate' / first date datatype field in output
+    if (!targetRule) {
+      targetRule =
+        outputFields.find(f => normalizeKey(f.output_fieldname || f.fieldname) === 'date') ||
+        outputFields.find(f => normalizeKey(f.output_fieldname || f.fieldname) === 'postingdate') ||
+        outputFields.find(f => (f.datatype || '').toLowerCase() === 'date');
+    }
+
+    if (!targetRule) {
+      return {};
+    }
+
+    const colName = targetRule.output_fieldname || targetRule.fieldname;
+    const dates: string[] = [];
+
+    for (const row of mergedOutputRows) {
+      const parsed = this.parseDateToYyyyMmDd(row[colName], targetRule.format);
+      if (parsed) {
+        dates.push(parsed);
+      }
+    }
+
+    if (dates.length === 0) {
+      return {};
+    }
+
+    dates.sort();
+    return {
+      minTransactionDate: dates[0],
+      maxTransactionDate: dates[dates.length - 1],
     };
   }
 
@@ -632,7 +753,12 @@ export class FileMergeService {
     }
   }
 
-  buildMergedFilename(accountSourceName?: string, date: Date = new Date()): string {
+  buildMergedFilename(
+    accountSourceName?: string,
+    minTransactionDate?: string,
+    maxTransactionDate?: string,
+    date: Date = new Date()
+  ): string {
     const pad = (n: number) => String(n).padStart(2, '0');
     const year = date.getFullYear();
     const month = pad(date.getMonth() + 1);
@@ -647,10 +773,13 @@ export class FileMergeService {
       .replace(/\s+/g, '_')
       .replace(/[^a-zA-Z0-9_-]/g, '');
 
-    if (cleanName) {
-      return `merged_${cleanName}${timestamp}.csv`;
-    }
-    return `merged_${timestamp}.csv`;
+    const parts = ['merged'];
+    if (cleanName) parts.push(cleanName);
+    if (minTransactionDate) parts.push(minTransactionDate);
+    if (maxTransactionDate) parts.push(maxTransactionDate);
+    parts.push(timestamp);
+
+    return `${parts.join('_')}.csv`;
   }
 
   private escapeCsvValue(val: string): string {

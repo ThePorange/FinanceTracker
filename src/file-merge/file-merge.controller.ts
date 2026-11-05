@@ -128,12 +128,17 @@ export class FileMergeController {
       throw new BadRequestException('No mapping rules provided or found for this source');
     }
 
+    const sourceId = sourceIdStr ? parseInt(sourceIdStr, 10) : undefined;
     let sourceName = accountSourceName;
-    if (!sourceName && sourceIdStr) {
-      sourceName = this.fileMergeService.getSourceName(parseInt(sourceIdStr, 10)) || undefined;
+    if (!sourceName && sourceId) {
+      sourceName = this.fileMergeService.getSourceName(sourceId) || undefined;
     }
-    const filename = this.fileMergeService.buildMergedFilename(sourceName);
-    const result = this.fileMergeService.executeMerge(csvFile.buffer, ofxFile.buffer, mappings);
+    const result = this.fileMergeService.executeMerge(csvFile.buffer, ofxFile.buffer, mappings, sourceId);
+    const filename = this.fileMergeService.buildMergedFilename(
+      sourceName,
+      result.minTransactionDate,
+      result.maxTransactionDate
+    );
 
     return {
       ...result,
@@ -173,14 +178,19 @@ export class FileMergeController {
       throw new BadRequestException(`Invalid mappings JSON: ${e.message}`);
     }
 
-    const result = this.fileMergeService.executeMerge(csvFile.buffer, ofxFile.buffer, mappings);
+    const sourceId = sourceIdStr ? parseInt(sourceIdStr, 10) : undefined;
+    const result = this.fileMergeService.executeMerge(csvFile.buffer, ofxFile.buffer, mappings, sourceId);
 
     let sourceName = accountSourceName;
-    if (!sourceName && sourceIdStr) {
-      sourceName = this.fileMergeService.getSourceName(parseInt(sourceIdStr, 10)) || undefined;
+    if (!sourceName && sourceId) {
+      sourceName = this.fileMergeService.getSourceName(sourceId) || undefined;
     }
 
-    const filename = this.fileMergeService.buildMergedFilename(sourceName);
+    const filename = this.fileMergeService.buildMergedFilename(
+      sourceName,
+      result.minTransactionDate,
+      result.maxTransactionDate
+    );
 
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
